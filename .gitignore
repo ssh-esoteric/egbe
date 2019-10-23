@@ -1,0 +1,9 @@
+*.sw[a-z]
+*~
+
+egbe
+*.o
+
+*.bin
+*.gb
+*.gbc
