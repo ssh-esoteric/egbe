@@ -11,6 +11,10 @@ int main(int argc, char **argv)
 	if (!gb)
 		return 1;
 
+	gameboy_insert_cartridge(gb, argv[1]);
+	if (argc >= 3)
+		gameboy_insert_boot_rom(gb, argv[2]);
+
 	gameboy_free(gb);
 
 	return 0;

@@ -15,5 +15,8 @@ struct gameboy *gameboy_alloc(enum gameboy_system system)
 
 void gameboy_free(struct gameboy *gb)
 {
+	gameboy_remove_boot_rom(gb);
+	gameboy_remove_cartridge(gb);
+
 	free(gb);
 }
