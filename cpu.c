@@ -162,12 +162,17 @@ static inline void instr_xor_r_v(struct gameboy *gb, uint8_t *r, uint8_t v);
 
 void instr_adc_r_aa(struct gameboy *gb, uint8_t *r, uint16_t aa)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	instr_adc_r_v(gb, r, timed_read(gb, aa));
 }
 
 void instr_adc_r_v(struct gameboy *gb, uint8_t *r, uint8_t v)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	bool c = overflow8(*r, v, gb->carry);
+	bool h = overflow4(*r, v, gb->carry);
+
+	*r = *r + v + gb->carry;
+
+	set_flags(gb, c, h, false, *r == 0);
 }
 
 void instr_add_r_aa(struct gameboy *gb, uint8_t *r, uint16_t aa)
@@ -187,17 +192,24 @@ void instr_add_r_v(struct gameboy *gb, uint8_t *r, uint8_t v)
 
 void instr_add_rr_vv(struct gameboy *gb, uint16_t *rr, uint16_t vv)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	bool c = overflow16(*rr, vv);
+	bool h = overflow12(*rr, vv);
+
+	*rr = *rr + vv;
+
+	set_flags_chn(gb, c, h, false);
 }
 
 void instr_and_r_aa(struct gameboy *gb, uint8_t *r, uint16_t aa)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	instr_and_r_v(gb, r, timed_read(gb, aa));
 }
 
 void instr_and_r_v(struct gameboy *gb, uint8_t *r, uint8_t v)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	*r = *r & v;
+
+	set_flags(gb, false, true, false, *r == 0);
 }
 
 void instr_bit_n_aa(struct gameboy *gb, int n, uint16_t aa)
@@ -220,7 +232,7 @@ void instr_call(struct gameboy *gb, bool condition)
 
 void instr_ccf(struct gameboy *gb)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	set_flags_chn(gb, !gb->carry, false, false);
 }
 
 void instr_cp_r_aa(struct gameboy *gb, uint8_t *r, uint16_t aa)
@@ -238,7 +250,9 @@ void instr_cp_r_v(struct gameboy *gb, uint8_t *r, uint8_t v)
 
 void instr_cpl_r(struct gameboy *gb, uint8_t *r)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	*r = ~*r;
+
+	gb->f = gb->f | FLAG_HALFCARRY | FLAG_SUBTRACT;
 }
 
 void instr_daa_r(struct gameboy *gb, uint8_t *r)
@@ -248,7 +262,9 @@ void instr_daa_r(struct gameboy *gb, uint8_t *r)
 
 void instr_dec_aa(struct gameboy *gb, uint16_t aa)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	uint8_t tmp = timed_read(gb, aa);
+	instr_dec_r(gb, &tmp);
+	timed_write(gb, aa, tmp);
 }
 
 void instr_dec_r(struct gameboy *gb, uint8_t *r)
@@ -281,7 +297,9 @@ void instr_halt(struct gameboy *gb)
 
 void instr_inc_aa(struct gameboy *gb, uint16_t aa)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	uint8_t tmp = timed_read(gb, aa);
+	instr_inc_r(gb, &tmp);
+	timed_write(gb, aa, tmp);
 }
 
 void instr_inc_r(struct gameboy *gb, uint8_t *r)
@@ -320,7 +338,8 @@ void instr_ld_aa_v(struct gameboy *gb, uint16_t aa, uint8_t v)
 
 void instr_ld_aa_vv(struct gameboy *gb, uint16_t aa, uint16_t vv)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	timed_write(gb, aa + 0, vv >> 8);
+	timed_write(gb, aa + 1, vv & 0xFF);
 }
 
 void instr_ld_r_aa(struct gameboy *gb, uint8_t *r, uint16_t aa)
@@ -340,7 +359,15 @@ void instr_ld_rr_vv(struct gameboy *gb, uint16_t *rr, uint16_t vv)
 
 void instr_ld_rr_vv_jr(struct gameboy *gb, uint16_t *rr, uint16_t vv)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	int8_t diff = (int8_t)iv(gb);
+
+	bool c = overflow8(vv, diff);
+	bool h = overflow4(vv, diff);
+
+	*rr = vv + diff;
+
+	// TODO: Verify the flags on this one
+	set_flags(gb, c, h, false, false);
 }
 
 void instr_nop(struct gameboy *gb)
@@ -350,12 +377,14 @@ void instr_nop(struct gameboy *gb)
 
 void instr_or_r_aa(struct gameboy *gb, uint8_t *r, uint16_t aa)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	instr_or_r_v(gb, r, timed_read(gb, aa));
 }
 
 void instr_or_r_v(struct gameboy *gb, uint8_t *r, uint8_t v)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	*r = *r | v;
+
+	gb->f = (*r == 0) ? FLAG_ZERO : 0;
 }
 
 void instr_pop(struct gameboy *gb, uint16_t *rr)
@@ -421,47 +450,67 @@ void instr_rla(struct gameboy *gb)
 
 void instr_rlc_aa(struct gameboy *gb, uint16_t aa)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	uint8_t tmp = timed_read(gb, aa);
+	instr_rlc_r(gb, &tmp);
+	timed_write(gb, aa, tmp);
 }
 
 void instr_rlc_r(struct gameboy *gb, uint8_t *r)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	*r = (*r << 1) | (*r >> 7);
+
+	set_flags(gb, *r & 0x01, false, false, *r == 0);
 }
 
 void instr_rlca(struct gameboy *gb)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	instr_rlc_r(gb, &gb->a);
+
+	gb->zero = false;
 }
 
 void instr_rr_aa(struct gameboy *gb, uint16_t aa)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	uint8_t tmp = timed_read(gb, aa);
+	instr_rr_r(gb, &tmp);
+	timed_write(gb, aa, tmp);
 }
 
 void instr_rr_r(struct gameboy *gb, uint8_t *r)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	bool c = *r & 0x01;
+
+	*r = (*r >> 1) | (gb->carry << 7);
+
+	set_flags(gb, c, false, false, *r == 0);
 }
 
 void instr_rra(struct gameboy *gb)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	instr_rr_r(gb, &gb->a);
+
+	gb->zero = false;
 }
 
 void instr_rrc_aa(struct gameboy *gb, uint16_t aa)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	uint8_t tmp = timed_read(gb, aa);
+	instr_rrc_r(gb, &tmp);
+	timed_write(gb, aa, tmp);
 }
 
 void instr_rrc_r(struct gameboy *gb, uint8_t *r)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	*r = (*r >> 1) | (*r << 7);
+
+	set_flags(gb, *r & 0x80, false, false, *r == 0);
 }
 
 void instr_rrca(struct gameboy *gb)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	instr_rrc_r(gb, &gb->a);
+
+	gb->zero = false;
 }
 
 void instr_rst(struct gameboy *gb, uint16_t aa)
@@ -473,27 +522,34 @@ void instr_rst(struct gameboy *gb, uint16_t aa)
 
 void instr_sbc_r_aa(struct gameboy *gb, uint8_t *r, uint16_t aa)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	instr_sbc_r_v(gb, r, timed_read(gb, aa));
 }
 
 void instr_sbc_r_v(struct gameboy *gb, uint8_t *r, uint8_t v)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	bool c = underflow8(*r, v, gb->carry);
+	bool h = underflow4(*r, v, gb->carry);
+
+	*r = *r - v - gb->carry;
+
+	set_flags(gb, c, h, true, *r == 0);
 }
 
 void instr_scf(struct gameboy *gb)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	set_flags_chn(gb, true, false, false);
 }
 
 void instr_set_n_aa(struct gameboy *gb, int n, uint16_t aa)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	uint8_t tmp = timed_read(gb, aa);
+	instr_set_n_r(gb, n, &tmp);
+	timed_write(gb, aa, tmp);
 }
 
 void instr_set_n_r(struct gameboy *gb, int n, uint8_t *r)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	*r = *r | (1 << n);
 }
 
 void instr_sla_aa(struct gameboy *gb, uint16_t aa)
@@ -513,22 +569,34 @@ void instr_sla_r(struct gameboy *gb, uint8_t *r)
 
 void instr_sra_aa(struct gameboy *gb, uint16_t aa)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	uint8_t tmp = timed_read(gb, aa);
+	instr_sra_r(gb, &tmp);
+	timed_write(gb, aa, tmp);
 }
 
 void instr_sra_r(struct gameboy *gb, uint8_t *r)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	bool c = *r & 0x01;
+
+	*r = (*r & 0x80) | (*r >> 1);
+
+	set_flags(gb, c, false, false, *r == 0);
 }
 
 void instr_srl_aa(struct gameboy *gb, uint16_t aa)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	uint8_t tmp = timed_read(gb, aa);
+	instr_srl_r(gb, &tmp);
+	timed_write(gb, aa, tmp);
 }
 
 void instr_srl_r(struct gameboy *gb, uint8_t *r)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	bool c = *r & 0x01;
+
+	*r = *r >> 1;
+
+	set_flags(gb, c, false, false, *r == 0);
 }
 
 void instr_stop(struct gameboy *gb)
@@ -538,7 +606,7 @@ void instr_stop(struct gameboy *gb)
 
 void instr_sub_r_aa(struct gameboy *gb, uint8_t *r, uint16_t aa)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	instr_sub_r_v(gb, r, timed_read(gb, aa));
 }
 
 void instr_sub_r_v(struct gameboy *gb, uint8_t *r, uint8_t v)
@@ -553,17 +621,23 @@ void instr_sub_r_v(struct gameboy *gb, uint8_t *r, uint8_t v)
 
 void instr_swap_aa(struct gameboy *gb, uint16_t aa)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	uint8_t tmp = timed_read(gb, aa);
+	instr_swap_r(gb, &tmp);
+	timed_write(gb, aa, tmp);
 }
 
 void instr_swap_r(struct gameboy *gb, uint8_t *r)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	*r = (*r << 4) | (*r >> 4);
+
+	gb->f = (*r == 0) ? FLAG_ZERO : 0;
 }
 
 void instr_undefined(struct gameboy *gb, uint8_t opcode)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	GBLOG("Undefined opcode: %02X", opcode);
+
+	gb->cpu_status = GAMEBOY_CPU_CRASHED;
 }
 
 void instr_xor_r_aa(struct gameboy *gb, uint8_t *r, uint16_t aa)
