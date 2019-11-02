@@ -15,6 +15,13 @@ int main(int argc, char **argv)
 	if (argc >= 3)
 		gameboy_insert_boot_rom(gb, argv[2]);
 
+	gameboy_restart(gb);
+	while (gb->cpu_status != GAMEBOY_CPU_CRASHED) {
+		gameboy_tick(gb);
+
+		if (gb->pc == 0x0100) break; // TODO: tmp
+	}
+
 	gameboy_free(gb);
 
 	return 0;

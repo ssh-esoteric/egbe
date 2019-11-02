@@ -22,6 +22,13 @@ enum gameboy_addr {
 	GAMEBOY_ADDR_GLOBAL_CHECKSUM   = 0x014E,
 };
 
+enum gameboy_cpu_status {
+	GAMEBOY_CPU_CRASHED,
+	GAMEBOY_CPU_RUNNING,
+	GAMEBOY_CPU_HALTED,
+	GAMEBOY_CPU_STOPPED,
+};
+
 enum gameboy_features {
 	GAMEBOY_FEATURE_SRAM          = (1 << 0),
 	GAMEBOY_FEATURE_BATTERY       = (1 << 1),
@@ -58,6 +65,9 @@ struct gameboy {
 	enum gameboy_mbc mbc;
 	enum gameboy_system system;
 
+	enum gameboy_cpu_status cpu_status;
+
+	bool boot_enabled;
 	uint8_t *boot;
 	size_t boot_size;
 
@@ -68,10 +78,63 @@ struct gameboy {
 	uint8_t (*sram)[0x2000];
 	uint8_t *sram_bank;
 	size_t sram_size;
+
+	uint8_t (*wram)[0x1000];
+	uint8_t *wram_bank;
+	size_t wram_size;
+
+	uint8_t hram[0x007F];
+
+	uint16_t pc;
+	uint16_t sp;
+
+	union {
+		struct {
+			union {
+				struct {
+					uint8_t _unused_cpu_flags:4;
+					uint8_t carry:1;
+					uint8_t halfcarry:1;
+					uint8_t subtract:1;
+					uint8_t zero:1;
+				};
+				uint8_t f;
+			};
+			uint8_t a;
+		};
+		uint16_t af;
+	};
+
+	union {
+		struct {
+			uint8_t c;
+			uint8_t b;
+		};
+		uint16_t bc;
+	};
+
+	union {
+		struct {
+			uint8_t e;
+			uint8_t d;
+		};
+		uint16_t de;
+	};
+
+	union {
+		struct {
+			uint8_t l;
+			uint8_t h;
+		};
+		uint16_t hl;
+	};
 };
 
 struct gameboy *gameboy_alloc(enum gameboy_system system);
 void gameboy_free(struct gameboy *gb);
+
+void gameboy_restart(struct gameboy *gb);
+void gameboy_tick(struct gameboy *gb);
 
 int gameboy_insert_boot_rom(struct gameboy *gb, char *path);
 void gameboy_remove_boot_rom(struct gameboy *gb);

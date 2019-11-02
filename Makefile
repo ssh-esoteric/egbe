@@ -8,7 +8,9 @@ CFLAGS = \
 	-std=c11
 
 SRCS = \
+	cpu.c \
 	file.c \
+	mmu.c \
 	gameboy.c
 OBJS = $(SRCS:.c=.o)
 EGBE_SRCS = $(SRCS) egbe.c
