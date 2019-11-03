@@ -10,11 +10,14 @@ CFLAGS = \
 SRCS = \
 	cpu.c \
 	file.c \
+	lcd.c \
 	mmu.c \
 	gameboy.c
 OBJS = $(SRCS:.c=.o)
 EGBE_SRCS = $(SRCS) egbe.c
 EGBE_OBJS = $(OBJS) egbe.o
+
+LIBS = -lSDL2
 
 .PHONY: all clean
 
@@ -24,7 +27,7 @@ clean:
 	rm -f egbe *.o **/*.o
 
 egbe: $(EGBE_OBJS)
-	$(CC) $(CFLAGS) -o $@ $^
+	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -o $@ -c $<

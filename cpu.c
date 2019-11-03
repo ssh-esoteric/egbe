@@ -1,4 +1,5 @@
 #include "common.h"
+#include "lcd.h"
 #include "mmu.h"
 
 enum {
@@ -10,7 +11,11 @@ enum {
 
 static void tick(struct gameboy *gb)
 {
+	gb->cycles += 4;
+
 	; // TODO: synchronize CPU cycles to other components (LCD, APU, etc)
+
+	lcd_sync(gb);
 }
 
 static uint8_t timed_read(struct gameboy *gb, uint16_t addr)
@@ -325,7 +330,7 @@ void instr_jp(struct gameboy *gb, bool condition)
 
 void instr_jr(struct gameboy *gb, bool condition)
 {
-	int8_t diff = iv(gb);
+	int8_t diff = (int8_t)iv(gb);
 
 	if (condition)
 		gb->pc += diff;

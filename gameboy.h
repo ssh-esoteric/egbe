@@ -5,6 +5,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
+struct gameboy;
+struct gameboy_callback;
+
 enum gameboy_addr {
 	GAMEBOY_ADDR_NINTENDO_LOGO     = 0x0104,
 	GAMEBOY_ADDR_GAME_TITLE        = 0x0134,
@@ -20,6 +23,21 @@ enum gameboy_addr {
 	GAMEBOY_ADDR_ROM_VERSION       = 0x014C,
 	GAMEBOY_ADDR_HEADER_CHECKSUM   = 0x014D,
 	GAMEBOY_ADDR_GLOBAL_CHECKSUM   = 0x014E,
+
+	GAMEBOY_ADDR_LCDC = 0xFF40,
+	GAMEBOY_ADDR_STAT = 0xFF41,
+	GAMEBOY_ADDR_SCY  = 0xFF42,
+	GAMEBOY_ADDR_SCX  = 0xFF43,
+	GAMEBOY_ADDR_LY   = 0xFF44,
+	GAMEBOY_ADDR_LYC  = 0xFF45,
+	GAMEBOY_ADDR_DMA  = 0xFF46,
+	GAMEBOY_ADDR_BGP  = 0xFF47,
+	GAMEBOY_ADDR_OBP0 = 0xFF48,
+	GAMEBOY_ADDR_OBP1 = 0xFF49,
+	GAMEBOY_ADDR_WY   = 0xFF4A,
+	GAMEBOY_ADDR_WX   = 0xFF4B,
+
+	GAMEBOY_ADDR_BOOT_SWITCH = 0xFF50,
 };
 
 enum gameboy_cpu_status {
@@ -35,6 +53,13 @@ enum gameboy_features {
 	GAMEBOY_FEATURE_RTC           = (1 << 2), // AKA "Timer"
 	GAMEBOY_FEATURE_RUMBLE        = (1 << 3),
 	GAMEBOY_FEATURE_ACCELEROMETER = (1 << 3),
+};
+
+enum gameboy_lcd_status {
+	GAMEBOY_LCD_HBLANK         = 0,
+	GAMEBOY_LCD_VBLANK         = 1,
+	GAMEBOY_LCD_OAM_SEARCH     = 2,
+	GAMEBOY_LCD_PIXEL_TRANSFER = 3,
 };
 
 enum gameboy_mbc {
@@ -60,12 +85,40 @@ enum gameboy_system {
 	GAMEBOY_SYSTEM_SGB2,
 };
 
+struct gameboy_callback {
+	void (*callback)(struct gameboy *gb, void *context);
+	void *context;
+};
+
 struct gameboy {
 	unsigned int features;
 	enum gameboy_mbc mbc;
 	enum gameboy_system system;
 
 	enum gameboy_cpu_status cpu_status;
+	long cycles;
+
+	bool lcd_enabled;
+	enum gameboy_lcd_status lcd_status;
+	enum gameboy_lcd_status next_lcd_status;
+	long next_lcd_status_in;
+
+	uint8_t scanline;
+	uint8_t bgp;
+
+	struct gameboy_callback on_vblank;
+	int screen[144][160];
+	int dbg_background[256][256];
+	int dbg_window[256][256];
+	int dbg_vram[192][128];
+
+	struct tile {
+		uint8_t pixels[8][8];
+	} tiles[384];
+
+	struct tile *tilemap[2][1024];
+	struct tile **background_tilemap;
+	struct tile **window_tilemap;
 
 	bool boot_enabled;
 	uint8_t *boot;

@@ -1,5 +1,16 @@
 #include "common.h"
+#include "lcd.h"
 #include "mmu.h"
+
+static inline bool is_oam_accessible(struct gameboy *gb)
+{
+	return gb->lcd_status <= GAMEBOY_LCD_VBLANK;
+}
+
+static inline bool is_vram_accessible(struct gameboy *gb)
+{
+	return gb->lcd_status <= GAMEBOY_LCD_OAM_SEARCH;
+}
 
 uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 {
@@ -42,8 +53,8 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 	case 0xFF80 ... 0xFFFE:
 		return gb->hram[addr % 0x0080];
 
-	case 0xFF44:
-		return 0x90; // TODO: tmp
+	case GAMEBOY_ADDR_LY:
+		return gb->scanline;
 	}
 
 	return 0xFF; // "Undefined" read
@@ -56,8 +67,13 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 		// TODO: Cartridges with an MBC can intercept these reads
 		break;
 
-	case 0x8000 ... 0x9FFF:
-		// TODO: VRAM
+	case 0x8000 ... 0x97FF:
+		if (is_vram_accessible(gb))
+			lcd_update_tile(gb, addr % 0x2000, val);
+		break;
+	case 0x9800 ... 0x9FFF:
+		if (is_vram_accessible(gb))
+			lcd_update_tilemap(gb, addr % 0x0800, val);
 		break;
 
 	case 0xA000 ... 0xBFFF:
@@ -85,7 +101,18 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 		gb->hram[addr % 0x0080] = val;
 		break;
 
-	case 0xFF50:
+	case GAMEBOY_ADDR_LCDC:
+		if (val & 0x80)
+			lcd_enable(gb);
+		else
+			lcd_disable(gb);
+		break;
+
+	case GAMEBOY_ADDR_BGP:
+		gb->bgp = val;
+		break;
+
+	case GAMEBOY_ADDR_BOOT_SWITCH:
 		if (val != 0x01) {
 			GBLOG("Bad write to boot ROM switch: %02X", val);
 			gb->cpu_status = GAMEBOY_CPU_CRASHED;
