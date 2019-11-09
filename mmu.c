@@ -137,6 +137,7 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 			      gb->bc,
 			      gb->de,
 			      gb->hl);
+			gb->boot_enabled = false;
 		}
 		break;
 	}
