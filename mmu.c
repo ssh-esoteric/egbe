@@ -53,6 +53,12 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 	case 0xFF80 ... 0xFFFE:
 		return gb->hram[addr % 0x0080];
 
+	case GAMEBOY_ADDR_IE:
+		return gb->irq_enabled;
+
+	case GAMEBOY_ADDR_IF:
+		return gb->irq_flagged & 0xE0;
+
 	case GAMEBOY_ADDR_LY:
 		return gb->scanline;
 	}
@@ -99,6 +105,14 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 
 	case 0xFF80 ... 0xFFFE:
 		gb->hram[addr % 0x0080] = val;
+		break;
+
+	case GAMEBOY_ADDR_IE:
+		gb->irq_enabled = val;
+		break;
+
+	case GAMEBOY_ADDR_IF:
+		gb->irq_flagged = val & 0x1F;
 		break;
 
 	case GAMEBOY_ADDR_LCDC:

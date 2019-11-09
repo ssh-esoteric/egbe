@@ -24,6 +24,9 @@ enum gameboy_addr {
 	GAMEBOY_ADDR_HEADER_CHECKSUM   = 0x014D,
 	GAMEBOY_ADDR_GLOBAL_CHECKSUM   = 0x014E,
 
+	GAMEBOY_ADDR_IF  = 0xFF0F,
+	GAMEBOY_ADDR_IE  = 0xFFFF,
+
 	GAMEBOY_ADDR_LCDC = 0xFF40,
 	GAMEBOY_ADDR_STAT = 0xFF41,
 	GAMEBOY_ADDR_SCY  = 0xFF42,
@@ -53,6 +56,22 @@ enum gameboy_features {
 	GAMEBOY_FEATURE_RTC           = (1 << 2), // AKA "Timer"
 	GAMEBOY_FEATURE_RUMBLE        = (1 << 3),
 	GAMEBOY_FEATURE_ACCELEROMETER = (1 << 3),
+};
+
+enum gameboy_ime_status {
+	GAMEBOY_IME_DISABLED,
+	GAMEBOY_IME_PENDING,
+	GAMEBOY_IME_ENABLED,
+};
+
+// IE/IF flag: (1 << n)
+// RST vector: 0x0040 + (n * 0x08)
+enum gameboy_irq {
+	GAMEBOY_IRQ_VBLANK = 0,
+	GAMEBOY_IRQ_STAT   = 1,
+	GAMEBOY_IRQ_TIMER  = 2,
+	GAMEBOY_IRQ_SERIAL = 3,
+	GAMEBOY_IRQ_JOYPAD = 4,
 };
 
 enum gameboy_lcd_status {
@@ -97,6 +116,10 @@ struct gameboy {
 
 	enum gameboy_cpu_status cpu_status;
 	long cycles;
+
+	enum gameboy_ime_status ime_status;
+	uint8_t irq_enabled;
+	uint8_t irq_flagged;
 
 	bool lcd_enabled;
 	enum gameboy_lcd_status lcd_status;

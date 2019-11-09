@@ -1,4 +1,5 @@
 #include "common.h"
+#include "cpu.h"
 #include "lcd.h"
 #include "mmu.h"
 
@@ -287,17 +288,19 @@ void instr_dec_rr(struct gameboy *gb, uint16_t *rr)
 
 void instr_di(struct gameboy *gb)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	gb->ime_status = GAMEBOY_IME_DISABLED;
 }
 
 void instr_ei(struct gameboy *gb)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	gb->ime_status = GAMEBOY_IME_PENDING;
 }
 
 void instr_halt(struct gameboy *gb)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	gb->cpu_status = GAMEBOY_CPU_HALTED;
+
+	; // TODO: Check for HALT bug
 }
 
 void instr_inc_aa(struct gameboy *gb, uint16_t aa)
@@ -428,7 +431,7 @@ void instr_reti(struct gameboy *gb)
 {
 	instr_ret(gb, true);
 
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	gb->ime_status = GAMEBOY_IME_ENABLED;
 }
 
 void instr_rl_aa(struct gameboy *gb, uint16_t aa)
@@ -606,7 +609,7 @@ void instr_srl_r(struct gameboy *gb, uint8_t *r)
 
 void instr_stop(struct gameboy *gb)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	gb->cpu_status = GAMEBOY_CPU_STOPPED;
 }
 
 void instr_sub_r_aa(struct gameboy *gb, uint8_t *r, uint16_t aa)
@@ -1159,15 +1162,55 @@ static void process_opcode(struct gameboy *gb, uint8_t opcode)
 	}
 }
 
+static void process_interrupts(struct gameboy *gb)
+{
+	if (gb->ime_status == GAMEBOY_IME_PENDING) {
+		gb->ime_status = GAMEBOY_IME_ENABLED;
+		return;
+	}
+
+	uint8_t tmp = gb->irq_enabled & gb->irq_flagged & 0x1F;
+	if (!tmp)
+		return;
+
+	if (gb->cpu_status == GAMEBOY_CPU_HALTED) {
+		gb->cpu_status = GAMEBOY_CPU_RUNNING;
+		tick(gb);
+	}
+
+	if (gb->ime_status == GAMEBOY_IME_DISABLED)
+		return;
+
+	for (int irq = GAMEBOY_IRQ_VBLANK; ; ++irq) {
+		uint8_t mask = (1 << irq);
+		if (tmp & mask) {
+			gb->ime_status = GAMEBOY_IME_DISABLED;
+			gb->irq_flagged &= ~mask;
+			instr_rst(gb, 0x0040 + (irq * 0x08));
+			return;
+		}
+	}
+
+	GBLOG("No interrupts processed (IME: %d, IE: %02X, IF: %02X)",
+	      gb->ime_status, gb->irq_enabled, gb->irq_flagged);
+	gb->cpu_status = GAMEBOY_CPU_CRASHED;
+}
+
+void irq_flag(struct gameboy *gb, enum gameboy_irq irq)
+{
+	gb->irq_flagged |= (1 << irq);
+}
+
 void gameboy_tick(struct gameboy *gb)
 {
 	switch (gb->cpu_status) {
 	case GAMEBOY_CPU_CRASHED:
-	case GAMEBOY_CPU_HALTED:
 	case GAMEBOY_CPU_STOPPED:
 		exit(1); // TODO: tmp
 		break;
+	case GAMEBOY_CPU_HALTED:
 	case GAMEBOY_CPU_RUNNING:
+		process_interrupts(gb);
 		process_opcode(gb, iv(gb));
 		break;
 	}

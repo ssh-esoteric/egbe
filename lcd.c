@@ -1,4 +1,5 @@
 #include "common.h"
+#include "cpu.h"
 #include "lcd.h"
 
 static int to_color(int color, uint8_t palette)
@@ -64,6 +65,16 @@ static void render_debug(struct gameboy *gb)
 	}
 }
 
+static void enter_vblank(struct gameboy *gb)
+{
+	render_debug(gb);
+
+	irq_flag(gb, GAMEBOY_IRQ_VBLANK);
+
+	if (gb->on_vblank.callback)
+		gb->on_vblank.callback(gb, gb->on_vblank.context);
+}
+
 void lcd_init(struct gameboy *gb)
 {
 	for (int i = 0; i < 1024; ++i)
@@ -115,10 +126,8 @@ void lcd_sync(struct gameboy *gb)
 
 		gb->next_lcd_status_in += 456;
 
-		if (gb->scanline == 144 && gb->on_vblank.callback) {
-			render_debug(gb);
-			gb->on_vblank.callback(gb, gb->on_vblank.context);
-		}
+		if (gb->scanline == 144)
+			enter_vblank(gb);
 
 		break;
 	}
