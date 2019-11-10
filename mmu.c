@@ -59,8 +59,31 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 	case GAMEBOY_ADDR_IF:
 		return gb->irq_flagged & 0xE0;
 
+
+	case GAMEBOY_ADDR_LCDC:
+		return (gb->background_enabled ? BIT(0) : 0)
+		     | (gb->sprites_enabled ? BIT(1) : 0)
+		     | (gb->sprite_size == 16 ? BIT(2) : 0)
+		     | (gb->background_tilemap == gb->tilemap[1] ? BIT(3) : 0)
+		     | (gb->tilemap_signed ? 0 : BIT(4))
+		     | (gb->window_enabled ? BIT(5) : 0)
+		     | (gb->window_tilemap == gb->tilemap[1] ? BIT(6) : 0)
+		     | (gb->lcd_enabled ? BIT(7) : 0);
+
+	case GAMEBOY_ADDR_STAT:
+		return gb->lcd_enabled ? gb->lcd_status : 0
+		     | (gb->scanline == gb->scanline_compare) ? BIT(2) : 0
+		     | gb->stat_on_hblank ? BIT(3) : 0
+		     | gb->stat_on_vblank ? BIT(4) : 0
+		     | gb->stat_on_oam_search ? BIT(5) : 0
+		     | gb->stat_on_scanline ? BIT(6) : 0
+		     | BIT(7);
+
 	case GAMEBOY_ADDR_LY:
 		return gb->scanline;
+
+	case GAMEBOY_ADDR_LYC:
+		return gb->scanline_compare;
 
 	case GAMEBOY_ADDR_SCY:
 		return gb->sy;
@@ -73,6 +96,15 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 
 	case GAMEBOY_ADDR_WX:
 		return gb->wx + 7;
+
+	case GAMEBOY_ADDR_BGP:
+		return gb->bgp;
+
+	case GAMEBOY_ADDR_OBP0:
+		return gb->obp[0];
+
+	case GAMEBOY_ADDR_OBP1:
+		return gb->obp[1];
 	}
 
 	return 0xFF; // "Undefined" read
@@ -128,10 +160,42 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 		break;
 
 	case GAMEBOY_ADDR_LCDC:
-		if (val & 0x80)
+		gb->background_enabled = (val & BIT(0));
+		gb->sprites_enabled = (val & BIT(1));
+		gb->sprite_size = (val & BIT(2)) ? 16 : 8;
+		gb->background_tilemap = gb->tilemap[!!(val & BIT(3))];
+		lcd_update_tilemap_cache(gb, !(val & BIT(4)));
+		gb->window_enabled = (val & BIT(5));
+		gb->window_tilemap = gb->tilemap[!!(val & BIT(6))];
+		if (val & BIT(7))
 			lcd_enable(gb);
 		else
 			lcd_disable(gb);
+		break;
+
+	case GAMEBOY_ADDR_STAT:
+		// TODO: Does this STAT if we're already in these modes?
+		gb->stat_on_hblank = (val & BIT(3));
+		gb->stat_on_vblank = (val & BIT(4));
+		gb->stat_on_oam_search = (val & BIT(5));
+		gb->stat_on_scanline = (val & BIT(6));
+		break;
+
+	case GAMEBOY_ADDR_DMA:
+		// TODO: DMAs are much more complicated than this
+		gb->dma = val;
+		for (int from = (val << 8), to = 0xFE00, i = 0; i < 0xA0; ++i)
+			mmu_write(gb, (to | i), mmu_read(gb, (from | i)));
+		break;
+
+	case GAMEBOY_ADDR_LY:
+		// TODO: "Writing will reset the counter"
+		//       Just the counter, or does it restart the rendering?
+		break;
+
+	case GAMEBOY_ADDR_LYC:
+		gb->scanline_compare = val;
+		lcd_update_scanline(gb, gb->scanline);
 		break;
 
 	case GAMEBOY_ADDR_SCY:
@@ -152,6 +216,14 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 
 	case GAMEBOY_ADDR_BGP:
 		gb->bgp = val;
+		break;
+
+	case GAMEBOY_ADDR_OBP0:
+		gb->obp[0] = val;
+		break;
+
+	case GAMEBOY_ADDR_OBP1:
+		gb->obp[1] = val;
 		break;
 
 	case GAMEBOY_ADDR_BOOT_SWITCH:

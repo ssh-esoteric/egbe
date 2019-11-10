@@ -127,11 +127,22 @@ struct gameboy {
 	long next_lcd_status_in;
 
 	uint8_t scanline;
+	uint8_t scanline_compare;
 	uint8_t sy;
 	uint8_t sx;
 	uint8_t wy;
 	uint8_t wx;
+	uint8_t dma;
 	uint8_t bgp;
+	uint8_t obp[2];
+	uint8_t sprite_size;
+	bool sprites_enabled;
+	bool background_enabled;
+	bool window_enabled;
+	bool stat_on_hblank;
+	bool stat_on_vblank;
+	bool stat_on_oam_search;
+	bool stat_on_scanline;
 
 	struct gameboy_callback on_vblank;
 	int screen[144][160];
@@ -144,8 +155,10 @@ struct gameboy {
 	} tiles[384];
 
 	struct tile *tilemap[2][1024];
+	uint8_t tilemap_raw[2 * 1024];
 	struct tile **background_tilemap;
 	struct tile **window_tilemap;
+	bool tilemap_signed;
 
 	bool boot_enabled;
 	uint8_t *boot;

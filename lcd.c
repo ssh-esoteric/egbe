@@ -85,19 +85,22 @@ static void enter_vblank(struct gameboy *gb)
 
 	irq_flag(gb, GAMEBOY_IRQ_VBLANK);
 
+	if (gb->stat_on_vblank)
+		irq_flag(gb, GAMEBOY_IRQ_STAT);
+
 	if (gb->on_vblank.callback)
 		gb->on_vblank.callback(gb, gb->on_vblank.context);
 }
 
 void lcd_init(struct gameboy *gb)
 {
-	for (int i = 0; i < 1024; ++i)
-		gb->tilemap[0][i] = &gb->tiles[0];
-	for (int i = 0; i < 1024; ++i)
-		gb->tilemap[1][i] = &gb->tiles[0];
+	gb->tilemap_signed = true;
+	lcd_update_tilemap_cache(gb, false);
 
 	gb->background_tilemap = gb->tilemap[0];
 	gb->window_tilemap = gb->tilemap[1];
+
+	gb->sprite_size = 8;
 
 	gb->lcd_enabled = true;
 	lcd_disable(gb);
@@ -113,6 +116,10 @@ void lcd_sync(struct gameboy *gb)
 	case GAMEBOY_LCD_OAM_SEARCH:
 		if (++gb->scanline > 143)
 			gb->scanline = 0;
+		lcd_update_scanline(gb, gb->scanline);
+
+		if (gb->stat_on_oam_search)
+			irq_flag(gb, GAMEBOY_IRQ_STAT);
 
 		gb->next_lcd_status = GAMEBOY_LCD_PIXEL_TRANSFER;
 		gb->next_lcd_status_in += 80;
@@ -125,6 +132,9 @@ void lcd_sync(struct gameboy *gb)
 
 	case GAMEBOY_LCD_HBLANK:
 		render_scanline(gb);
+
+		if (gb->stat_on_hblank)
+			irq_flag(gb, GAMEBOY_IRQ_STAT);
 
 		if (gb->scanline == 143)
 			gb->next_lcd_status = GAMEBOY_LCD_VBLANK;
@@ -139,6 +149,8 @@ void lcd_sync(struct gameboy *gb)
 			gb->next_lcd_status = GAMEBOY_LCD_OAM_SEARCH;
 		else
 			gb->next_lcd_status = GAMEBOY_LCD_VBLANK;
+
+		lcd_update_scanline(gb, gb->scanline);
 
 		gb->next_lcd_status_in += 456;
 
@@ -171,6 +183,14 @@ void lcd_disable(struct gameboy *gb)
 	gb->scanline = 0;
 }
 
+void lcd_update_scanline(struct gameboy *gb, uint8_t scanline)
+{
+	gb->scanline = scanline;
+
+	if (gb->stat_on_scanline && gb->scanline == gb->scanline_compare)
+		irq_flag(gb, GAMEBOY_IRQ_STAT);
+}
+
 void lcd_update_tile(struct gameboy *gb, uint16_t offset, uint8_t val)
 {
 	struct tile *t = &gb->tiles[offset / 16];
@@ -188,7 +208,20 @@ void lcd_update_tile(struct gameboy *gb, uint16_t offset, uint8_t val)
 
 void lcd_update_tilemap(struct gameboy *gb, uint16_t offset, uint8_t val)
 {
-	struct tile *t = &gb->tiles[val];
+	struct tile *t = gb->tilemap_signed
+		? &gb->tiles[256 + (int8_t)val]
+		: &gb->tiles[val];
 
+	gb->tilemap_raw[offset] = val;
 	gb->tilemap[offset >= 0x0400][offset % 0x0400] = t;
+}
+
+void lcd_update_tilemap_cache(struct gameboy *gb, bool is_signed)
+{
+	if (gb->tilemap_signed == is_signed)
+		return;
+
+	gb->tilemap_signed = is_signed;
+	for (int i = 0; i < 0x0800; ++i)
+		lcd_update_tilemap(gb, i, gb->tilemap_raw[i]);
 }
