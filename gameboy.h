@@ -127,6 +127,10 @@ struct gameboy {
 	long next_lcd_status_in;
 
 	uint8_t scanline;
+	uint8_t sy;
+	uint8_t sx;
+	uint8_t wy;
+	uint8_t wx;
 	uint8_t bgp;
 
 	struct gameboy_callback on_vblank;

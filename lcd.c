@@ -65,6 +65,20 @@ static void render_debug(struct gameboy *gb)
 	}
 }
 
+static void render_scanline(struct gameboy *gb)
+{
+	int y = gb->scanline;
+	uint8_t dy = y + gb->sy;
+
+	for (int x = 0; x < 160; ++x) {
+		uint8_t dx = x + gb->sx;
+
+		struct tile *t = gb->background_tilemap[(dy / 8 * 32) + (dx / 8)];
+
+		gb->screen[y][x] = to_color(t->pixels[dy % 8][dx % 8], gb->bgp);
+	}
+}
+
 static void enter_vblank(struct gameboy *gb)
 {
 	render_debug(gb);
@@ -110,6 +124,8 @@ void lcd_sync(struct gameboy *gb)
 		break;
 
 	case GAMEBOY_LCD_HBLANK:
+		render_scanline(gb);
+
 		if (gb->scanline == 143)
 			gb->next_lcd_status = GAMEBOY_LCD_VBLANK;
 		else

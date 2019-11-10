@@ -61,6 +61,18 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 
 	case GAMEBOY_ADDR_LY:
 		return gb->scanline;
+
+	case GAMEBOY_ADDR_SCY:
+		return gb->sy;
+
+	case GAMEBOY_ADDR_SCX:
+		return gb->sx;
+
+	case GAMEBOY_ADDR_WY:
+		return gb->wy;
+
+	case GAMEBOY_ADDR_WX:
+		return gb->wx + 7;
 	}
 
 	return 0xFF; // "Undefined" read
@@ -120,6 +132,22 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 			lcd_enable(gb);
 		else
 			lcd_disable(gb);
+		break;
+
+	case GAMEBOY_ADDR_SCY:
+		gb->sy = val;
+		break;
+
+	case GAMEBOY_ADDR_SCX:
+		gb->sx = val;
+		break;
+
+	case GAMEBOY_ADDR_WY:
+		gb->wy = val;
+		break;
+
+	case GAMEBOY_ADDR_WX:
+		gb->wx = val - 7;
 		break;
 
 	case GAMEBOY_ADDR_BGP:
