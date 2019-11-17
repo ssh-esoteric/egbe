@@ -150,6 +150,18 @@ struct gameboy {
 	int dbg_window[256][256];
 	int dbg_vram[192][128];
 
+	struct sprite {
+		uint8_t y;
+		uint8_t x;
+		uint8_t index;
+		bool priority;
+		bool flipy;
+		bool flipx;
+		bool palette;
+	} sprites[40];
+	struct sprite *sprites_sorted[40];
+	bool sprites_unsorted;
+
 	struct tile {
 		uint8_t pixels[8][8];
 	} tiles[384];

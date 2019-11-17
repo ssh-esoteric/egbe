@@ -144,7 +144,8 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 		break;
 
 	case 0xFE00 ... 0xFE9F:
-		// TODO: OAM
+		if (is_oam_accessible(gb))
+			lcd_update_sprite(gb, addr % 0x0100, val);
 		break;
 
 	case 0xFF80 ... 0xFFFE:

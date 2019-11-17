@@ -65,17 +65,69 @@ static void render_debug(struct gameboy *gb)
 	}
 }
 
+static int sprite_qsort(const void *p1, const void *p2)
+{
+	const struct sprite *lhs = p1;
+	const struct sprite *rhs = p2;
+
+	if (lhs->x != rhs->x)
+		return (lhs->x < rhs->x) ? -1 : 1;
+
+	return (lhs < rhs) ? -1 : 1;
+}
+
 static void render_scanline(struct gameboy *gb)
 {
+	uint8_t line[160];
 	int y = gb->scanline;
 	uint8_t dy = y + gb->sy;
+
+	if (gb->sprites_unsorted)
+		qsort(gb->sprites_sorted, 40, sizeof(void *), sprite_qsort);
 
 	for (int x = 0; x < 160; ++x) {
 		uint8_t dx = x + gb->sx;
 
 		struct tile *t = gb->background_tilemap[(dy / 8 * 32) + (dx / 8)];
 
-		gb->screen[y][x] = to_color(t->pixels[dy % 8][dx % 8], gb->bgp);
+		uint8_t code = t->pixels[dy % 8][dx % 8];
+		line[x] = code;
+		gb->screen[y][x] = to_color(code, gb->bgp);
+	}
+
+	for (int i = 0; i < 40; ++i) {
+		struct sprite *s = gb->sprites_sorted[i];
+
+		uint8_t dy = (uint8_t)(y - s->y);
+
+		if (dy >= gb->sprite_size)
+			continue;
+
+		// TODO: Tile/row fetching in 8x16 mode
+		struct tile *t = &gb->tiles[s->index];
+		uint8_t *row = t->pixels[dy % 8];
+
+		for (int sx = 0; sx < 8; ++sx) {
+			uint8_t dx = s->x + sx;
+
+			if (dx >= 160)
+				continue;
+
+			uint8_t code = row[sx];
+
+			// Sprite color 0 is transparent
+			if (!code)
+				continue;
+
+			// Low-priority sprites only prevail over bg color 0
+			if (s->priority && line[dx])
+				continue;
+
+			line[dx] = code;
+			gb->screen[y][dx] = to_color(code, gb->obp[s->palette]);
+		}
+
+		// TODO: Stop after 10th sprite per scanline
 	}
 }
 
@@ -101,6 +153,9 @@ void lcd_init(struct gameboy *gb)
 	gb->window_tilemap = gb->tilemap[1];
 
 	gb->sprite_size = 8;
+	gb->sprites_unsorted = true;
+	for (int i = 0; i < 40; ++i)
+		gb->sprites_sorted[i] = &gb->sprites[i];
 
 	gb->lcd_enabled = true;
 	lcd_disable(gb);
@@ -189,6 +244,33 @@ void lcd_update_scanline(struct gameboy *gb, uint8_t scanline)
 
 	if (gb->stat_on_scanline && gb->scanline == gb->scanline_compare)
 		irq_flag(gb, GAMEBOY_IRQ_STAT);
+}
+
+void lcd_update_sprite(struct gameboy *gb, uint16_t offset, uint8_t val)
+{
+	struct sprite *s = &gb->sprites[offset / 4];
+	switch (offset % 4) {
+	case 0:
+		s->y = val - 16;
+		gb->sprites_unsorted = true;
+		break;
+
+	case 1:
+		s->x = val - 8;
+		gb->sprites_unsorted = true;
+		break;
+
+	case 2:
+		s->index = val;
+		break;
+
+	case 3:
+		s->palette = !!(val & BIT(4));
+		s->flipx = !!(val & BIT(5));
+		s->flipy = !!(val & BIT(6));
+		s->priority = !!(val & BIT(7));
+		break;
+	}
 }
 
 void lcd_update_tile(struct gameboy *gb, uint16_t offset, uint8_t val)
