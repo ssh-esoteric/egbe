@@ -24,6 +24,11 @@ enum gameboy_addr {
 	GAMEBOY_ADDR_HEADER_CHECKSUM   = 0x014D,
 	GAMEBOY_ADDR_GLOBAL_CHECKSUM   = 0x014E,
 
+	GAMEBOY_ADDR_DIV  = 0xFF04,
+	GAMEBOY_ADDR_TIMA = 0xFF05,
+	GAMEBOY_ADDR_TMA  = 0xFF06,
+	GAMEBOY_ADDR_TAC  = 0xFF07,
+
 	GAMEBOY_ADDR_IF  = 0xFF0F,
 	GAMEBOY_ADDR_IE  = 0xFFFF,
 
@@ -120,6 +125,15 @@ struct gameboy {
 	enum gameboy_ime_status ime_status;
 	uint8_t irq_enabled;
 	uint8_t irq_flagged;
+
+	long next_div_in;
+	long next_timer_in;
+	uint8_t div;
+	bool timer_enabled;
+	uint8_t timer_counter;
+	uint8_t timer_modulo;
+	uint8_t timer_frequency_code;
+	int timer_frequency_cycles;
 
 	bool lcd_enabled;
 	enum gameboy_lcd_status lcd_status;

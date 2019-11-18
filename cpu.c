@@ -2,6 +2,7 @@
 #include "cpu.h"
 #include "lcd.h"
 #include "mmu.h"
+#include "timer.h"
 
 enum {
 	FLAG_CARRY     = 0x10,
@@ -17,6 +18,7 @@ static void tick(struct gameboy *gb)
 	; // TODO: synchronize CPU cycles to other components (LCD, APU, etc)
 
 	lcd_sync(gb);
+	timer_sync(gb);
 }
 
 static uint8_t timed_read(struct gameboy *gb, uint16_t addr)

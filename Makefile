@@ -12,6 +12,7 @@ SRCS = \
 	file.c \
 	lcd.c \
 	mmu.c \
+	timer.c \
 	gameboy.c
 OBJS = $(SRCS:.c=.o)
 EGBE_SRCS = $(SRCS) egbe.c

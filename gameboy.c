@@ -63,6 +63,9 @@ void gameboy_restart(struct gameboy *gb)
 
 	gb->cpu_status = GAMEBOY_CPU_RUNNING;
 	gb->cycles = 0;
+	gb->div = 0;
+	gb->next_div_in = 256;
+	gb->timer_enabled = false;
 
 	lcd_init(gb);
 }

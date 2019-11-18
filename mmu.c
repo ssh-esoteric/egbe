@@ -1,6 +1,7 @@
 #include "common.h"
 #include "lcd.h"
 #include "mmu.h"
+#include "timer.h"
 
 static inline bool is_oam_accessible(struct gameboy *gb)
 {
@@ -65,6 +66,19 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 	case GAMEBOY_ADDR_IF:
 		return gb->irq_flagged & 0xE0;
 
+	case GAMEBOY_ADDR_DIV:
+		return gb->div;
+
+	case GAMEBOY_ADDR_TIMA:
+		return gb->timer_counter;
+
+	case GAMEBOY_ADDR_TMA:
+		return gb->timer_modulo;
+
+	case GAMEBOY_ADDR_TAC:
+		return (gb->timer_frequency_code & 0x03)
+		     | 0xF8 // TODO: Do the unused bits return 0 or 1?
+		     | (gb->timer_enabled ? BIT(2) : 0);
 
 	case GAMEBOY_ADDR_LCDC:
 		return (gb->background_enabled ? BIT(0) : 0)
@@ -164,6 +178,25 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 
 	case GAMEBOY_ADDR_IF:
 		gb->irq_flagged = val & 0x1F;
+		break;
+
+	case GAMEBOY_ADDR_DIV:
+		gb->div = 0;
+		gb->next_div_in = gb->cycles + 256;
+		timer_set_frequency(gb, gb->timer_frequency_code);
+		break;
+
+	case GAMEBOY_ADDR_TIMA:
+		gb->timer_counter = val;
+		break;
+
+	case GAMEBOY_ADDR_TMA:
+		gb->timer_modulo = val;
+		break;
+
+	case GAMEBOY_ADDR_TAC:
+		gb->timer_enabled = !!(val & BIT(2));
+		timer_set_frequency(gb, val & 0x03);
 		break;
 
 	case GAMEBOY_ADDR_LCDC:
