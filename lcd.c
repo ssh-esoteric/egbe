@@ -276,6 +276,7 @@ void lcd_update_sprite(struct gameboy *gb, uint16_t offset, uint8_t val)
 void lcd_update_tile(struct gameboy *gb, uint16_t offset, uint8_t val)
 {
 	struct tile *t = &gb->tiles[offset / 16];
+	t->raw[offset % 16] = val;
 
 	uint8_t *row = t->pixels[(offset / 2) % 8];
 	int bit = (offset % 2) ? 0x02 : 0x01;

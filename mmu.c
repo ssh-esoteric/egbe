@@ -29,8 +29,14 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 			return gb->rom_bank[addr % 0x4000];
 		break;
 
-	case 0x8000 ... 0x9FFF:
-		break; // TODO: VRAM
+	case 0x8000 ... 0x97FF:
+		if (is_vram_accessible(gb))
+			return gb->tiles[(addr % 0x2000) / 16].raw[addr % 16];
+		break;
+	case 0x9800 ... 0x9FFF:
+		if (is_vram_accessible(gb))
+			return gb->tilemap_raw[addr % 0x0800];
+		break;
 
 	case 0xA000 ... 0xBFFF:
 		if (gb->sram)

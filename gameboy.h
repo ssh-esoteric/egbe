@@ -164,6 +164,7 @@ struct gameboy {
 
 	struct tile {
 		uint8_t pixels[8][8];
+		uint8_t raw[16];
 	} tiles[384];
 
 	struct tile *tilemap[2][1024];
