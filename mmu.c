@@ -64,7 +64,7 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 		return gb->irq_enabled;
 
 	case GAMEBOY_ADDR_IF:
-		return gb->irq_flagged & 0xE0;
+		return gb->irq_flagged | 0xE0;
 
 	case GAMEBOY_ADDR_DIV:
 		return gb->div;
