@@ -157,6 +157,7 @@ int main(int argc, char **argv)
 		gameboy_insert_boot_rom(gb, argv[2]);
 
 	gameboy_restart(gb);
+	long next_joypad_in = 0;
 	while (gb->cpu_status != GAMEBOY_CPU_CRASHED) {
 		gameboy_tick(gb);
 
@@ -176,6 +177,25 @@ int main(int argc, char **argv)
 				}
 				break;
 			}
+		}
+
+		if (gb->cycles > next_joypad_in) {
+			next_joypad_in += 20000;
+
+			const uint8_t *keys = SDL_GetKeyboardState(NULL);
+
+			struct gameboy_joypad jp = {
+				.right = keys[SDL_SCANCODE_RIGHT],
+				.left  = keys[SDL_SCANCODE_LEFT],
+				.up    = keys[SDL_SCANCODE_UP],
+				.down  = keys[SDL_SCANCODE_DOWN],
+
+				.a      = keys[SDL_SCANCODE_A],
+				.b      = keys[SDL_SCANCODE_D],
+				.select = keys[SDL_SCANCODE_RSHIFT],
+				.start  = keys[SDL_SCANCODE_RETURN],
+			};
+			gameboy_update_joypad(gb, &jp);
 		}
 	}
 

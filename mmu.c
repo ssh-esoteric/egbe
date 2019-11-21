@@ -66,6 +66,12 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 	case GAMEBOY_ADDR_IF:
 		return gb->irq_flagged | 0xE0;
 
+	case GAMEBOY_ADDR_P1:
+		if (gb->joypad_status == GAMEBOY_JOYPAD_ARROWS)
+			return gb->p1_arrows;
+		else
+			return gb->p1_buttons;
+
 	case GAMEBOY_ADDR_DIV:
 		return gb->div;
 
@@ -178,6 +184,17 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 
 	case GAMEBOY_ADDR_IF:
 		gb->irq_flagged = val & 0x1F;
+		break;
+
+	case GAMEBOY_ADDR_P1:
+		// The arrow and button lines correspond to bits 4 and 5
+		// respectively.  An _unset_ bit selects the line.
+		// TODO: How should this behave if both bits are set or
+		//       neither bit is set?
+		if (val & BIT(5))
+			gb->joypad_status = GAMEBOY_JOYPAD_ARROWS;
+		else
+			gb->joypad_status = GAMEBOY_JOYPAD_BUTTONS;
 		break;
 
 	case GAMEBOY_ADDR_DIV:

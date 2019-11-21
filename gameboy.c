@@ -1,4 +1,5 @@
 #include "common.h"
+#include "cpu.h"
 #include "lcd.h"
 #include "mmu.h"
 
@@ -68,4 +69,39 @@ void gameboy_restart(struct gameboy *gb)
 	gb->timer_enabled = false;
 
 	lcd_init(gb);
+}
+
+// Note: Bits of P1 are _unset_ when the corresponding button is pressed
+void gameboy_update_joypad(struct gameboy *gb, struct gameboy_joypad *jp)
+{
+	uint8_t old_arrows = gb->p1_arrows;
+	uint8_t old_buttons = gb->p1_buttons;
+
+	// The GB physically prevents left+right or up+down from being pressed
+	// simultaneously.  For now, just unpress them both if so.
+	//
+	// TODO: Make this configurable; apparently allowing this can be good
+	//       for certain tool-assisted speedruns.
+	gb->p1_arrows = 0xDF;
+	if (jp->right != jp->left)
+		gb->p1_arrows &= ~(jp->right ? BIT(0) : BIT(1));
+	if (jp->up != jp->down)
+		gb->p1_arrows &= ~(jp->up ? BIT(2) : BIT(3));
+
+	gb->p1_buttons = 0xEF
+	               & ~(jp->a      ? BIT(0) : 0)
+	               & ~(jp->b      ? BIT(1) : 0)
+	               & ~(jp->select ? BIT(2) : 0)
+	               & ~(jp->start  ? BIT(3) : 0);
+
+	// Check for any unpressed -> pressed transitions
+	bool check_arrows = (old_arrows ^ gb->p1_arrows) & gb->p1_arrows;
+	bool check_buttons = (old_buttons ^ gb->p1_buttons) & gb->p1_buttons;
+
+	if (check_arrows || check_buttons) {
+		irq_flag(gb, GAMEBOY_IRQ_JOYPAD);
+
+		if (gb->cpu_status == GAMEBOY_CPU_STOPPED)
+			gb->cpu_status = GAMEBOY_CPU_RUNNING;
+	}
 }

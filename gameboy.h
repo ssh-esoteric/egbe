@@ -24,6 +24,8 @@ enum gameboy_addr {
 	GAMEBOY_ADDR_HEADER_CHECKSUM   = 0x014D,
 	GAMEBOY_ADDR_GLOBAL_CHECKSUM   = 0x014E,
 
+	GAMEBOY_ADDR_P1  = 0xFF00,
+
 	GAMEBOY_ADDR_DIV  = 0xFF04,
 	GAMEBOY_ADDR_TIMA = 0xFF05,
 	GAMEBOY_ADDR_TMA  = 0xFF06,
@@ -79,6 +81,11 @@ enum gameboy_irq {
 	GAMEBOY_IRQ_JOYPAD = 4,
 };
 
+enum gameboy_joypad_status {
+	GAMEBOY_JOYPAD_ARROWS,
+	GAMEBOY_JOYPAD_BUTTONS,
+};
+
 enum gameboy_lcd_status {
 	GAMEBOY_LCD_HBLANK         = 0,
 	GAMEBOY_LCD_VBLANK         = 1,
@@ -114,6 +121,18 @@ struct gameboy_callback {
 	void *context;
 };
 
+struct gameboy_joypad {
+	bool right;
+	bool left;
+	bool up;
+	bool down;
+
+	bool a;
+	bool b;
+	bool select;
+	bool start;
+};
+
 struct gameboy {
 	unsigned int features;
 	enum gameboy_mbc mbc;
@@ -125,6 +144,10 @@ struct gameboy {
 	enum gameboy_ime_status ime_status;
 	uint8_t irq_enabled;
 	uint8_t irq_flagged;
+
+	enum gameboy_joypad_status joypad_status;
+	uint8_t p1_arrows;
+	uint8_t p1_buttons;
 
 	long next_div_in;
 	long next_timer_in;
@@ -260,5 +283,7 @@ int gameboy_insert_boot_rom(struct gameboy *gb, char *path);
 void gameboy_remove_boot_rom(struct gameboy *gb);
 int gameboy_insert_cartridge(struct gameboy *gb, char *path);
 void gameboy_remove_cartridge(struct gameboy *gb);
+
+void gameboy_update_joypad(struct gameboy *gb, struct gameboy_joypad *jp);
 
 #endif
