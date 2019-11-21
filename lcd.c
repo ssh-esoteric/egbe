@@ -105,7 +105,7 @@ static void render_scanline(struct gameboy *gb)
 
 		// TODO: Tile/row fetching in 8x16 mode
 		struct tile *t = &gb->tiles[s->index];
-		uint8_t *row = t->pixels[dy % 8];
+		uint8_t *row = t->pixels[s->flipy ? (7 - (dy % 8)) : (dy % 8)];
 
 		for (int sx = 0; sx < 8; ++sx) {
 			uint8_t dx = s->x + sx;
@@ -113,7 +113,7 @@ static void render_scanline(struct gameboy *gb)
 			if (dx >= 160)
 				continue;
 
-			uint8_t code = row[sx];
+			uint8_t code = row[s->flipx ? (7 - sx) : sx];
 
 			// Sprite color 0 is transparent
 			if (!code)
