@@ -1,6 +1,7 @@
 #include "common.h"
 #include "cpu.h"
 #include "lcd.h"
+#include <sys/param.h>
 
 static int to_color(int color, uint8_t palette)
 {
@@ -85,12 +86,29 @@ static void render_scanline(struct gameboy *gb)
 	if (gb->sprites_unsorted)
 		qsort(gb->sprites_sorted, 40, sizeof(void *), sprite_qsort);
 
-	for (int x = 0; x < 160; ++x) {
+	uint8_t wx;
+	if (gb->window_enabled && gb->scanline >= gb->wy)
+		wx = MAX(0, MIN(160, gb->wx));
+	else
+		wx = 160;
+
+	for (int x = 0; x < wx; ++x) {
+		if (!gb->background_enabled)
+			break;
+
 		uint8_t dx = x + gb->sx;
 
 		struct tile *t = gb->background_tilemap[(dy / 8 * 32) + (dx / 8)];
 
 		uint8_t code = t->pixels[dy % 8][dx % 8];
+		line[x] = code;
+		gb->screen[y][x] = to_color(code, gb->bgp);
+	}
+	for (int x = wx; x < 160; ++x) {
+		// The window isn't affected by SX/SY offsets
+		struct tile *t = gb->window_tilemap[(y / 8 * 32) + (x / 8)];
+
+		uint8_t code = t->pixels[y % 8][x % 8];
 		line[x] = code;
 		gb->screen[y][x] = to_color(code, gb->bgp);
 	}
