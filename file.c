@@ -327,3 +327,65 @@ void gameboy_remove_cartridge(struct gameboy *gb)
 	gb->sram_banks = 0;
 	gb->sram_size = 0;
 }
+
+static int fread_sram(struct gameboy *gb, FILE *in)
+{
+	long size = fsize_rewind(in);
+	long need = gb->sram_size;
+
+	if (size != need) {
+		GBLOG("Bad SRAM size (got $%lX; need $%lX)", size, need);
+		return EINVAL;
+	}
+
+	if (!fread(gb->sram, size, 1, in)) {
+		GBLOG("Failed to read SRAM file: %m");
+		return EIO;
+	}
+
+	return 0;
+}
+
+int gameboy_load_sram(struct gameboy *gb, char *path)
+{
+	if (!gb->sram_size)
+		return 0;
+
+	FILE *in = fopen(path, "rb");
+	if (!in) {
+		GBLOG("Failed to open SRAM file for reading: %m");
+		return errno;
+	}
+
+	int rc = fread_sram(gb, in);
+	fclose(in);
+
+	return rc;
+}
+
+static int fwrite_sram(struct gameboy *gb, FILE *out)
+{
+	if (!fwrite(gb->sram, gb->sram_size, 1, out)) {
+		GBLOG("Failed to write SRAM file: %m");
+		return EIO;
+	}
+
+	return 0;
+}
+
+int gameboy_save_sram(struct gameboy *gb, char *path)
+{
+	if (!gb->sram_size)
+		return 0;
+
+	FILE *out = fopen(path, "wb");
+	if (!out) {
+		GBLOG("Failed to open SRAM file for writing: %m");
+		return errno;
+	}
+
+	int rc = fwrite_sram(gb, out);
+	fclose(out);
+
+	return rc;
+}

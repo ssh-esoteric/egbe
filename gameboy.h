@@ -293,6 +293,9 @@ void gameboy_remove_boot_rom(struct gameboy *gb);
 int gameboy_insert_cartridge(struct gameboy *gb, char *path);
 void gameboy_remove_cartridge(struct gameboy *gb);
 
+int gameboy_load_sram(struct gameboy *gb, char *path);
+int gameboy_save_sram(struct gameboy *gb, char *path);
+
 void gameboy_update_joypad(struct gameboy *gb, struct gameboy_joypad *jp);
 
 #endif

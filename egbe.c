@@ -112,7 +112,7 @@ static void on_vblank(struct gameboy *gb, void *context)
 int main(int argc, char **argv)
 {
 	if (argc < 2) {
-		puts("Usage: egbe <ROM.gb> [<BOOT.bin>]");
+		puts("Usage: egbe <ROM.gb> [<BOOT.bin>] [<SRAM.sram>]");
 		return 0;
 	}
 
@@ -155,6 +155,8 @@ int main(int argc, char **argv)
 	gameboy_insert_cartridge(gb, argv[1]);
 	if (argc >= 3)
 		gameboy_insert_boot_rom(gb, argv[2]);
+	if (argc >= 4)
+		gameboy_load_sram(gb, argv[3]);
 
 	gameboy_restart(gb);
 	long next_joypad_in = 0;
@@ -198,6 +200,9 @@ int main(int argc, char **argv)
 			gameboy_update_joypad(gb, &jp);
 		}
 	}
+
+	if (argc >= 4)
+		gameboy_save_sram(gb, argv[3]);
 
 	gameboy_free(gb);
 
