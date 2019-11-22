@@ -49,9 +49,11 @@ static int prepare_cartridge(struct gameboy *gb, FILE *in)
 	uint8_t code = fgetc(in);
 	fseek(in, 0, SEEK_SET);
 
+	int banks = 0;
 	switch (code) {
 	case 0x00 ... 0x08:
-		need = (ROM_BANK_SIZE * 2) << code;
+		banks = 2 << code;
+		need = ROM_BANK_SIZE * banks;
 		break;
 	default:
 		GBLOG("Bad ROM size code: $%02X", code);
@@ -68,8 +70,10 @@ static int prepare_cartridge(struct gameboy *gb, FILE *in)
 		GBLOG("Failed to allocate ROM: %m");
 		return ENOMEM;
 	}
-	gb->rom_bank = gb->rom[1]; // This works out well even with no MBC
+	gb->rom_bank = 1; // This works out well even with no MBC
+	gb->rom_banks = banks;
 	gb->rom_size = size;
+	gb->romx = gb->rom[gb->rom_bank];
 
 	if (!fread(gb->rom, size, 1, in)) {
 		GBLOG("Failed to read ROM file: %m");
@@ -120,6 +124,7 @@ static int prepare_cartridge(struct gameboy *gb, FILE *in)
 		return EINVAL;
 	}
 
+	banks = 1;
 	size = 0;
 	code = gb->rom[0][GAMEBOY_ADDR_SRAM_SIZE_CODE];
 	switch (code) {
@@ -127,11 +132,11 @@ static int prepare_cartridge(struct gameboy *gb, FILE *in)
 		if (gb->mbc == GAMEBOY_MBC_MBC2)
 			size = SRAM_BANK_SIZE / 16;
 		break;
-	case 0x01: size = SRAM_BANK_SIZE / 4;  break;
-	case 0x02: size = SRAM_BANK_SIZE;      break;
-	case 0x03: size = SRAM_BANK_SIZE * 4;  break;
-	case 0x04: size = SRAM_BANK_SIZE * 16; break;
-	case 0x05: size = SRAM_BANK_SIZE * 8;  break;
+	case 0x01: size = SRAM_BANK_SIZE / 4; break;
+	case 0x02: size = SRAM_BANK_SIZE; break;
+	case 0x03: size = SRAM_BANK_SIZE * (banks = 4);  break;
+	case 0x04: size = SRAM_BANK_SIZE * (banks = 16); break;
+	case 0x05: size = SRAM_BANK_SIZE * (banks = 8);  break;
 	default:
 		   GBLOG("Bad SRAM size code: $%02X", code);
 		   return EINVAL;
@@ -143,8 +148,10 @@ static int prepare_cartridge(struct gameboy *gb, FILE *in)
 			GBLOG("Failed to allocate SRAM: %m");
 			return ENOMEM;
 		}
-		gb->sram_bank = gb->sram[0];
+		gb->sram_bank = 0;
+		gb->sram_banks = banks;
 		gb->sram_size = size;
+		gb->sramx = gb->sram[gb->sram_bank];
 	}
 
 	return 0;
@@ -308,11 +315,15 @@ void gameboy_remove_cartridge(struct gameboy *gb)
 {
 	free(gb->rom);
 	gb->rom = NULL;
-	gb->rom_bank = NULL;
+	gb->romx = NULL;
+	gb->rom_bank = 0;
+	gb->rom_banks = 0;
 	gb->rom_size = 0;
 
 	free(gb->sram);
 	gb->sram = NULL;
-	gb->sram_bank = NULL;
+	gb->sramx = NULL;
+	gb->sram_bank = 0;
+	gb->sram_banks = 0;
 	gb->sram_size = 0;
 }

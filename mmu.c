@@ -2,6 +2,7 @@
 #include "lcd.h"
 #include "mmu.h"
 #include "timer.h"
+#include <assert.h>
 
 static inline bool is_oam_accessible(struct gameboy *gb)
 {
@@ -11,6 +12,83 @@ static inline bool is_oam_accessible(struct gameboy *gb)
 static inline bool is_vram_accessible(struct gameboy *gb)
 {
 	return gb->lcd_status <= GAMEBOY_LCD_OAM_SEARCH;
+}
+
+static void mbc1_write(struct gameboy *gb, uint16_t addr, uint8_t val)
+{
+	union {
+		struct {
+			uint8_t lo:5;
+			uint8_t hi:2;
+			uint8_t _sram_mode:1;
+		};
+		struct {
+			uint8_t all:7;
+			uint8_t _rom_mode:1;
+		};
+	} bank;
+	static_assert(sizeof(bank) == 1, "Unexpected MBC1 bank struct");
+
+	if (gb->mbc1_sram_mode) {
+		bank.lo = gb->rom_bank;
+		bank.hi = gb->sram_bank;
+	} else {
+		bank.all = gb->rom_bank;
+	}
+
+	switch (addr) {
+	case 0x0000 ... 0x1FFF:
+		gb->sram_enabled = gb->sram && (val & 0x0F) == 0x0A;
+		break;
+
+	case 0x2000 ... 0x3FFF:
+		bank.lo = (val & 0x1F) ?: 1;
+		break;
+
+	case 0x4000 ... 0x5FFF:
+		bank.hi = (val & 0x03);
+		break;
+
+	case 0x6000 ... 0x7FFF:
+		gb->mbc1_sram_mode = (val & 0x01);
+		break;
+	}
+
+	if (gb->mbc1_sram_mode) {
+		gb->rom_bank = bank.lo;
+		gb->sram_bank = bank.hi;
+	} else {
+		gb->rom_bank = bank.all;
+		gb->sram_bank = 0;
+	}
+
+	gb->romx = gb->rom[gb->rom_bank];
+	gb->sramx = gb->sram[gb->sram_bank];
+}
+
+static void mbc3_write(struct gameboy *gb, uint16_t addr, uint8_t val)
+{
+	switch (addr) {
+	case 0x0000 ... 0x1FFF:
+		gb->sram_enabled = gb->sram && (val & 0x0F) == 0x0A;
+		break;
+
+	case 0x2000 ... 0x3FFF:
+		gb->rom_bank = (val & 0x7F) ?: 1;
+		break;
+
+	case 0x4000 ... 0x5FFF:
+		// TODO: RTC registers if mapped
+		gb->sram_bank = val % gb->sram_banks;
+		break;
+
+	case 0x6000 ... 0x7FFF:
+		// TODO: Latch RTC
+		break;
+	}
+
+	gb->romx = gb->rom[gb->rom_bank];
+	gb->sramx = gb->sram[gb->sram_bank];
 }
 
 uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
@@ -27,7 +105,7 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 
 	case 0x4000 ... 0x7FFF:
 		if (gb->rom)
-			return gb->rom_bank[addr % 0x4000];
+			return gb->romx[addr % 0x4000];
 		break;
 
 	case 0x8000 ... 0x97FF:
@@ -40,14 +118,14 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 		break;
 
 	case 0xA000 ... 0xBFFF:
-		if (gb->sram)
-			return gb->sram_bank[addr % 0x2000 % gb->sram_size];
+		if (gb->sram_enabled)
+			return gb->sramx[addr % 0x2000 % gb->sram_size];
 		break;
 
 	case 0xC000 ... 0xCFFF:
 		return gb->wram[0][addr % 0x1000];
 	case 0xD000 ... 0xDFFF:
-		return gb->wram_bank[addr % 0x1000];
+		return gb->wramx[addr % 0x1000];
 
 	case 0xE000 ... 0xFDFF:
 		GBLOG("Bad read from ECHO RAM: %04X", addr);
@@ -140,7 +218,28 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 {
 	switch (addr) {
 	case 0x0000 ... 0x7FFF:
-		// TODO: Cartridges with an MBC can intercept these reads
+		switch (gb->mbc) {
+		case GAMEBOY_MBC_NONE:
+			break;
+		case GAMEBOY_MBC_MBC1:
+			mbc1_write(gb, addr, val);
+			break;
+		case GAMEBOY_MBC_MBC3:
+			mbc3_write(gb, addr, val);
+			break;
+		case GAMEBOY_MBC_MBC2:
+		case GAMEBOY_MBC_MMM01:
+		case GAMEBOY_MBC_MBC5:
+		case GAMEBOY_MBC_MBC6:
+		case GAMEBOY_MBC_MBC7:
+		case GAMEBOY_MBC_HUC1:
+		case GAMEBOY_MBC_HUC3:
+		case GAMEBOY_MBC_TAMA5:
+		case GAMEBOY_MBC_CAMERA:
+			GBLOG("MBC $%d not yet implemented", gb->mbc);
+			gb->cpu_status = GAMEBOY_CPU_CRASHED;
+			break;
+		}
 		break;
 
 	case 0x8000 ... 0x97FF:
@@ -153,15 +252,15 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 		break;
 
 	case 0xA000 ... 0xBFFF:
-		if (gb->sram)
-			gb->sram_bank[addr % 0x2000 % gb->sram_size] = val;
+		if (gb->sram_enabled)
+			gb->sramx[addr % 0x2000 % gb->sram_size] = val;
 		break;
 
 	case 0xC000 ... 0xCFFF:
 		gb->wram[0][addr % 0x1000] = val;
 		break;
 	case 0xD000 ... 0xDFFF:
-		gb->wram_bank[addr % 0x1000] = val;
+		gb->wramx[addr % 0x1000] = val;
 		break;
 
 	case 0xE000 ... 0xFDFF:

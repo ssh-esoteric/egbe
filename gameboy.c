@@ -13,17 +13,19 @@ struct gameboy *gameboy_alloc(enum gameboy_system system)
 
 	gb->system = system;
 	if (gb->system >= GAMEBOY_SYSTEM_GBC) {
-		gb->wram_size = 8 * sizeof(gb->wram[0]);
+		gb->wram_banks = 8;
 	} else {
-		gb->wram_size = 2 * sizeof(gb->wram[0]);
+		gb->wram_banks = 2;
 	}
+	gb->wram_size = gb->wram_banks * sizeof(gb->wram[0]);
 
 	gb->wram = malloc(gb->wram_size);
 	if (!gb->wram) {
 		GBLOG("Failed to allocate WRAM: %m");
 		return NULL;
 	}
-	gb->wram_bank = gb->wram[1];
+	gb->wram_bank = 1;
+	gb->wramx = gb->wram[gb->wram_bank];
 
 	gb->cpu_status = GAMEBOY_CPU_CRASHED;
 	gb->cycles = 0;
@@ -66,6 +68,7 @@ void gameboy_restart(struct gameboy *gb)
 	gb->cycles = 0;
 	gb->div = 0;
 	gb->next_div_in = 256;
+	gb->sram_enabled = false;
 	gb->timer_enabled = false;
 
 	lcd_init(gb);

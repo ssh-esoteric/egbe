@@ -215,18 +215,27 @@ struct gameboy {
 	size_t boot_size;
 
 	uint8_t (*rom)[0x4000];
-	uint8_t *rom_bank;
+	uint8_t *romx;
+	size_t rom_bank;
+	size_t rom_banks;
 	size_t rom_size;
 
+	bool sram_enabled;
 	uint8_t (*sram)[0x2000];
-	uint8_t *sram_bank;
+	uint8_t *sramx;
+	size_t sram_bank;
+	size_t sram_banks;
 	size_t sram_size;
 
 	uint8_t (*wram)[0x1000];
-	uint8_t *wram_bank;
+	uint8_t *wramx;
+	size_t wram_bank;
+	size_t wram_banks;
 	size_t wram_size;
 
 	uint8_t hram[0x007F];
+
+	bool mbc1_sram_mode;
 
 	uint16_t pc;
 	uint16_t sp;
