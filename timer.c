@@ -13,18 +13,13 @@ void timer_set_frequency(struct gameboy *gb, uint8_t val)
 	case 3: gb->timer_frequency_cycles = 256;  break;
 	}
 
-	long base = gb->next_div_in - gb->cycles;
+	int mask = gb->timer_frequency_cycles - 1;
 
-	gb->next_timer_in = base + gb->timer_frequency_cycles;
+	gb->next_timer_in = (gb->cycles | mask) + 1;
 }
 
 void timer_sync(struct gameboy *gb)
 {
-	if (gb->cycles >= gb->next_div_in) {
-		++gb->div;
-		gb->next_div_in += 256;
-	}
-
 	if (!gb->timer_enabled || gb->cycles < gb->next_timer_in)
 		return;
 

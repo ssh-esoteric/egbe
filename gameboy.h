@@ -149,9 +149,7 @@ struct gameboy {
 	uint8_t p1_arrows;
 	uint8_t p1_buttons;
 
-	long next_div_in;
 	long next_timer_in;
-	uint8_t div;
 	bool timer_enabled;
 	uint8_t timer_counter;
 	uint8_t timer_modulo;

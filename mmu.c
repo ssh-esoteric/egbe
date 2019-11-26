@@ -151,7 +151,7 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 			return gb->p1_buttons;
 
 	case GAMEBOY_ADDR_DIV:
-		return gb->div;
+		return (gb->cycles >> 8) & 0xFF;
 
 	case GAMEBOY_ADDR_TIMA:
 		return gb->timer_counter;
@@ -297,9 +297,9 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 		break;
 
 	case GAMEBOY_ADDR_DIV:
-		gb->div = 0;
-		gb->next_div_in = gb->cycles + 256;
-		timer_set_frequency(gb, gb->timer_frequency_code);
+		gb->next_lcd_status_in -= gb->cycles;
+		gb->next_timer_in -= gb->cycles;
+		gb->cycles = 0;
 		break;
 
 	case GAMEBOY_ADDR_TIMA:
