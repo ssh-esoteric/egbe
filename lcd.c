@@ -243,7 +243,7 @@ void lcd_enable(struct gameboy *gb)
 	gb->scanline = 0;
 	gb->lcd_status = GAMEBOY_LCD_OAM_SEARCH;
 	gb->next_lcd_status = GAMEBOY_LCD_PIXEL_TRANSFER;
-	gb->next_lcd_status_in = gb->cycles += 80;
+	gb->next_lcd_status_in = gb->cycles + 80;
 }
 
 void lcd_disable(struct gameboy *gb)

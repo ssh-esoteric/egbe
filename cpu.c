@@ -200,6 +200,8 @@ void instr_add_r_v(struct gameboy *gb, uint8_t *r, uint8_t v)
 
 void instr_add_rr_vv(struct gameboy *gb, uint16_t *rr, uint16_t vv)
 {
+	tick(gb);
+
 	bool c = overflow16(*rr, vv);
 	bool h = overflow12(*rr, vv);
 
@@ -265,7 +267,28 @@ void instr_cpl_r(struct gameboy *gb, uint8_t *r)
 
 void instr_daa_r(struct gameboy *gb, uint8_t *r)
 {
-	GBLOG("TODO"); gb->cpu_status = GAMEBOY_CPU_CRASHED;
+	int tmp = *r;
+
+	if (gb->subtract) {
+		if (gb->halfcarry)
+			tmp -= 0x06;
+
+		if (gb->carry)
+			tmp -= 0x60;
+	} else {
+		if (gb->halfcarry || (tmp & 0x0F) > 0x09)
+			tmp += 0x06;
+
+		if (gb->carry || tmp > 0x9F)
+			tmp += 0x60;
+
+		if (tmp > 0xFF)
+			gb->carry = true;
+	}
+
+	*r = tmp;
+
+	set_flags(gb, gb->carry, false, gb->subtract, *r == 0);
 }
 
 void instr_dec_aa(struct gameboy *gb, uint16_t aa)
@@ -285,6 +308,8 @@ void instr_dec_r(struct gameboy *gb, uint8_t *r)
 
 void instr_dec_rr(struct gameboy *gb, uint16_t *rr)
 {
+	tick(gb);
+
 	--(*rr);
 }
 
@@ -322,6 +347,8 @@ void instr_inc_r(struct gameboy *gb, uint8_t *r)
 
 void instr_inc_rr(struct gameboy *gb, uint16_t *rr)
 {
+	tick(gb);
+
 	++(*rr);
 }
 
@@ -329,16 +356,20 @@ void instr_jp(struct gameboy *gb, bool condition)
 {
 	uint16_t next = iv16(gb);
 
-	if (condition)
+	if (condition) {
+		tick(gb);
 		gb->pc = next;
+	}
 }
 
 void instr_jr(struct gameboy *gb, bool condition)
 {
 	int8_t diff = (int8_t)iv(gb);
 
-	if (condition)
+	if (condition) {
+		tick(gb);
 		gb->pc += diff;
+	}
 }
 
 void instr_ld_aa_v(struct gameboy *gb, uint16_t aa, uint8_t v)
@@ -348,8 +379,8 @@ void instr_ld_aa_v(struct gameboy *gb, uint16_t aa, uint8_t v)
 
 void instr_ld_aa_vv(struct gameboy *gb, uint16_t aa, uint16_t vv)
 {
-	timed_write(gb, aa + 0, vv >> 8);
-	timed_write(gb, aa + 1, vv & 0xFF);
+	timed_write(gb, aa + 0, vv & 0xFF);
+	timed_write(gb, aa + 1, vv >> 8);
 }
 
 void instr_ld_r_aa(struct gameboy *gb, uint8_t *r, uint16_t aa)
@@ -407,6 +438,7 @@ void instr_pop(struct gameboy *gb, uint16_t *rr)
 
 void instr_push(struct gameboy *gb, uint16_t vv)
 {
+	tick(gb);
 	timed_write(gb, --gb->sp, vv >> 8);
 	timed_write(gb, --gb->sp, vv & 0xFF);
 }
@@ -425,8 +457,10 @@ void instr_res_n_r(struct gameboy *gb, int n, uint8_t *r)
 
 void instr_ret(struct gameboy *gb, bool condition)
 {
-	if (condition)
+	if (condition) {
+		tick(gb);
 		instr_pop(gb, &gb->pc);
+	}
 }
 
 void instr_reti(struct gameboy *gb)
@@ -1101,12 +1135,12 @@ static void process_opcode(struct gameboy *gb, uint8_t opcode)
 	case 0xF6: instr_or_r_v(gb, &gb->a, iv(gb)); break;
 	case 0xFE: instr_cp_r_v(gb, &gb->a, iv(gb)); break;
 
-	case 0xC0: instr_ret(gb, !gb->zero); break;
-	case 0xC8: instr_ret(gb, gb->zero); break;
-	case 0xC9: instr_ret(gb, true); break;
-	case 0xD0: instr_ret(gb, !gb->carry); break;
-	case 0xD8: instr_ret(gb, gb->carry); break;
-	case 0xD9: instr_reti(gb); break;
+	case 0xC0: tick(gb); instr_ret(gb, !gb->zero); break;
+	case 0xC8: tick(gb); instr_ret(gb, gb->zero); break;
+	case 0xC9:           instr_ret(gb, true); break;
+	case 0xD0: tick(gb); instr_ret(gb, !gb->carry); break;
+	case 0xD8: tick(gb); instr_ret(gb, gb->carry); break;
+	case 0xD9:           instr_reti(gb); break;
 
 	case 0xE0: instr_ld_aa_v(gb, 0xFF00 | iv(gb), gb->a); break;
 	case 0xE2: instr_ld_aa_v(gb, 0xFF00 | gb->c, gb->a); break;
@@ -1146,11 +1180,24 @@ static void process_opcode(struct gameboy *gb, uint8_t opcode)
 	case 0xF7: instr_rst(gb, 0x0030); break;
 	case 0xFF: instr_rst(gb, 0x0038); break;
 
-	case 0xE8: instr_ld_rr_vv_jr(gb, &gb->sp, gb->sp); break;
-	case 0xF8: instr_ld_rr_vv_jr(gb, &gb->hl, gb->sp); break;
+	// These instructions have some odd timing... bus issue?
+	case 0xE8:
+		tick(gb);
+		tick(gb);
+		instr_ld_rr_vv_jr(gb, &gb->sp, gb->sp);
+		break;
+	case 0xF8:
+		tick(gb);
+		instr_ld_rr_vv_jr(gb, &gb->hl, gb->sp);
+		break;
 
-	case 0xE9: instr_ld_rr_vv(gb, &gb->pc, gb->hl); break;
-	case 0xF9: instr_ld_rr_vv(gb, &gb->sp, gb->hl); break;
+	case 0xE9:
+		instr_ld_rr_vv(gb, &gb->pc, gb->hl);
+		break;
+	case 0xF9:
+		tick(gb);
+		instr_ld_rr_vv(gb, &gb->sp, gb->hl);
+		break;
 
 	case 0xD3: case 0xDB: case 0xDD:
 	case 0xE3: case 0xE4: case 0xEB: case 0xEC: case 0xED:
@@ -1210,7 +1257,15 @@ void gameboy_tick(struct gameboy *gb)
 	case GAMEBOY_CPU_STOPPED:
 		exit(1); // TODO: tmp
 		break;
+
 	case GAMEBOY_CPU_HALTED:
+		process_interrupts(gb);
+		if (gb->cpu_status == GAMEBOY_CPU_RUNNING)
+			process_opcode(gb, iv(gb));
+		else
+			tick(gb);
+		break;
+
 	case GAMEBOY_CPU_RUNNING:
 		process_interrupts(gb);
 		process_opcode(gb, iv(gb));
