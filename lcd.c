@@ -121,8 +121,13 @@ static void render_scanline(struct gameboy *gb)
 		if (dy >= gb->sprite_size)
 			continue;
 
-		// TODO: Tile/row fetching in 8x16 mode
-		struct tile *t = &gb->tiles[s->index];
+		int index;
+		if (gb->sprite_size == 16)
+			index = (s->index & ~0x01) | ((dy > 7) ? 0x01 : 0x00);
+		else
+			index = s->index;
+
+		struct tile *t = &gb->tiles[index];
 		uint8_t *row = t->pixels[s->flipy ? (7 - (dy % 8)) : (dy % 8)];
 
 		for (int sx = 0; sx < 8; ++sx) {
