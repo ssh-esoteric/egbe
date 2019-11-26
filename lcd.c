@@ -81,18 +81,19 @@ static void render_scanline(struct gameboy *gb)
 {
 	uint8_t line[160];
 	int y = gb->scanline;
-	uint8_t dy = y + gb->sy;
+	uint8_t dy;
 
 	if (gb->sprites_unsorted)
 		qsort(gb->sprites_sorted, 40, sizeof(void *), sprite_qsort);
 
-	uint8_t wx;
+	uint8_t window_start;
 	if (gb->window_enabled && gb->scanline >= gb->wy)
-		wx = MAX(0, MIN(160, gb->wx));
+		window_start = MAX(0, MIN(160, gb->wx));
 	else
-		wx = 160;
+		window_start = 160;
 
-	for (int x = 0; x < wx; ++x) {
+	dy = y + gb->sy;
+	for (int x = 0; x < window_start; ++x) {
 		if (!gb->background_enabled)
 			break;
 
@@ -104,11 +105,14 @@ static void render_scanline(struct gameboy *gb)
 		line[x] = code;
 		gb->screen[y][x] = to_color(code, gb->bgp);
 	}
-	for (int x = wx; x < 160; ++x) {
-		// The window isn't affected by SX/SY offsets
-		struct tile *t = gb->window_tilemap[(y / 8 * 32) + (x / 8)];
 
-		uint8_t code = t->pixels[y % 8][x % 8];
+	dy = y - gb->wy;
+	for (int x = window_start; x < 160; ++x) {
+		uint8_t dx = x - gb->wx;
+
+		struct tile *t = gb->window_tilemap[(dy / 8 * 32) + (dx / 8)];
+
+		uint8_t code = t->pixels[dy % 8][dx % 8];
 		line[x] = code;
 		gb->screen[y][x] = to_color(code, gb->bgp);
 	}
@@ -116,8 +120,7 @@ static void render_scanline(struct gameboy *gb)
 	for (int i = 0; i < 40; ++i) {
 		struct sprite *s = gb->sprites_sorted[i];
 
-		uint8_t dy = (uint8_t)(y - s->y);
-
+		dy = y - s->y;
 		if (dy >= gb->sprite_size)
 			continue;
 

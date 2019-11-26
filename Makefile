@@ -1,6 +1,8 @@
 CC = gcc
 CFLAGS = \
-	-Wall -Wextra -Werror -Wstrict-prototypes \
+	-Wall -Wextra -Werror \
+	-Wshadow \
+	-Wstrict-prototypes \
 	-Wno-unused-function \
 	-Wno-unused-parameter \
 	-Wno-unused-variable \
