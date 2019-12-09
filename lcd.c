@@ -1,6 +1,6 @@
-#include "common.h"
 #include "cpu.h"
 #include "lcd.h"
+#include "common.h"
 #include <sys/param.h>
 
 static int to_color(int color, uint8_t palette)

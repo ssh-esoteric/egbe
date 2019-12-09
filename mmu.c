@@ -1,7 +1,8 @@
-#include "common.h"
+#include "apu.h"
 #include "lcd.h"
 #include "mmu.h"
 #include "timer.h"
+#include "common.h"
 #include <assert.h>
 
 static inline bool is_oam_accessible(struct gameboy *gb)
@@ -297,6 +298,11 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 		break;
 
 	case GAMEBOY_ADDR_DIV:
+		gb->next_apu_frame_in -= gb->cycles;
+		gb->sq1.super.next_tick_in -= gb->cycles;
+		gb->sq2.super.next_tick_in -= gb->cycles;
+		gb->wave.super.next_tick_in -= gb->cycles;
+		gb->noise.super.next_tick_in -= gb->cycles;
 		gb->next_lcd_status_in -= gb->cycles;
 		gb->next_timer_in -= gb->cycles;
 		gb->cycles = 0;
@@ -314,6 +320,177 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 		gb->timer_enabled = !!(val & BIT(2));
 		timer_set_frequency(gb, val & 0x03);
 		break;
+
+	case GAMEBOY_ADDR_NR10:
+		gb->sq1.sweep.shift = val & BITS(0, 2);
+		gb->sq1.sweep.delta = (val & BIT(3)) ? -1 : 1;
+		gb->sq1.sweep.sweeps_max = (val & BITS(4, 6)) >> 4;
+		break;
+
+	case GAMEBOY_ADDR_NR11:
+		gb->sq1.duty = (val & BITS(6, 7)) >> 6;
+		gb->sq1.length.clocks_remaining = gb->sq1.length.clocks_max - (val & BITS(0, 5));
+		break;
+
+	case GAMEBOY_ADDR_NR12:
+		gb->sq1.envelope.clocks_max = val & BITS(0, 2);
+		gb->sq1.envelope.delta = (val & BIT(3)) ? 1 : -1;
+		gb->sq1.envelope.volume_max = (val & BITS(4, 7)) >> 4;
+
+		gb->sq1.super.dac = !!(val & BITS(3, 7));
+		if (!gb->sq1.super.dac)
+			gb->sq1.super.enabled = false;
+		break;
+
+	case GAMEBOY_ADDR_NR13:
+		gb->sq1.super.frequency &= ~0xFF;
+		gb->sq1.super.frequency |= val;
+
+		gb->sq1.super.period = 4 * (2048 - gb->sq1.super.frequency);
+		break;
+
+	case GAMEBOY_ADDR_NR14:
+		gb->sq1.super.frequency &= ~BITS(8, 10);
+		gb->sq1.super.frequency |= ((val & BITS(0, 2)) << 8);
+
+		gb->sq1.super.period = 4 * (2048 - gb->sq1.super.frequency);
+
+		gb->sq1.length.is_terminal = !!(val & BIT(6));
+		if (val & BIT(7))
+			apu_trigger_square(gb, &gb->sq1);
+		break;
+
+	case GAMEBOY_ADDR_NR21:
+		gb->sq2.duty = (val & BITS(6, 7)) >> 6;
+		gb->sq2.length.clocks_remaining = gb->sq2.length.clocks_max - (val & BITS(0, 5));
+		break;
+
+	case GAMEBOY_ADDR_NR22:
+		gb->sq2.envelope.clocks_max = val & BITS(0, 2);
+		gb->sq2.envelope.delta = (val & BIT(3)) ? 1 : -1;
+		gb->sq2.envelope.volume_max = (val & BITS(4, 7)) >> 4;
+
+		gb->sq2.super.dac = !!(val & BITS(3, 7));
+		if (!gb->sq2.super.dac)
+			gb->sq2.super.enabled = false;
+		break;
+
+	case GAMEBOY_ADDR_NR23:
+		gb->sq2.super.frequency &= ~0xFF;
+		gb->sq2.super.frequency |= val;
+
+		gb->sq2.super.period = 4 * (2048 - gb->sq2.super.frequency);
+		break;
+
+	case GAMEBOY_ADDR_NR24:
+		gb->sq2.super.frequency &= ~BITS(8, 10);
+		gb->sq2.super.frequency |= ((val & BITS(0, 2)) << 8);
+
+		gb->sq2.super.period = 4 * (2048 - gb->sq2.super.frequency);
+
+		gb->sq2.length.is_terminal = !!(val & BIT(6));
+		if (val & BIT(7))
+			apu_trigger_square(gb, &gb->sq2);
+		break;
+
+	case GAMEBOY_ADDR_NR30:
+		gb->wave.super.dac = !!(val & BIT(7));
+		if (!gb->wave.super.dac)
+			gb->wave.super.enabled = false;
+		break;
+
+	case GAMEBOY_ADDR_NR31:
+		gb->wave.length.clocks_remaining = gb->wave.length.clocks_max - val;
+		break;
+
+	case GAMEBOY_ADDR_NR32:
+		switch ((val & BITS(5, 6)) >> 5) {
+		case 0: gb->wave.volume_shift = 4; break; // Effectively mute
+		case 1: gb->wave.volume_shift = 0; break;
+		case 2: gb->wave.volume_shift = 1; break;
+		case 3: gb->wave.volume_shift = 2; break;
+		}
+		break;
+
+	case GAMEBOY_ADDR_NR33:
+		gb->wave.super.frequency &= 0xFF;
+		gb->wave.super.frequency |= val;
+
+		gb->wave.super.period = 2 * (2048 - gb->wave.super.frequency);
+		break;
+
+	case GAMEBOY_ADDR_NR34:
+		gb->wave.super.frequency &= ~BITS(8, 10);
+		gb->wave.super.frequency |= ((val & BITS(0, 2)) << 8);
+
+		gb->wave.super.period = 2 * (2048 - gb->wave.super.frequency);
+
+		gb->wave.length.is_terminal = !!(val & BIT(6));
+		if (val & BIT(7))
+			apu_trigger_wave(gb, &gb->wave);
+		break;
+
+	case GAMEBOY_ADDR_NR41:
+		gb->noise.length.clocks_remaining = gb->noise.length.clocks_max - (val & BITS(0, 5));
+		break;
+
+	case GAMEBOY_ADDR_NR42:
+		gb->noise.envelope.clocks_max = val & BITS(0, 2);
+		gb->noise.envelope.delta = (val & BIT(3)) ? 1 : -1;
+		gb->noise.envelope.volume_max = (val & BITS(4, 7)) >> 4;
+
+		gb->noise.super.dac = !!(val & BITS(3, 7));
+		if (!gb->noise.super.dac)
+			gb->noise.super.enabled = false;
+		break;
+
+	case GAMEBOY_ADDR_NR43:
+		gb->noise.divisor = (val & BITS(0, 3));
+		gb->noise.lfsr_mask = (val & BIT(3)) ? 0x4040 : 0x4000;
+		gb->noise.shift = (val & BITS(4, 7)) >> 4;
+
+		gb->noise.super.period = ((gb->noise.divisor * 16) ?: 8) << (gb->noise.shift + 1);
+		break;
+
+	case GAMEBOY_ADDR_NR44:
+		gb->noise.length.is_terminal = !!(val & BIT(6));
+		if (val & BIT(7))
+			apu_trigger_noise(gb, &gb->noise);
+		break;
+
+	case GAMEBOY_ADDR_NR50:
+		gb->so1_volume = (val & BITS(0, 2));
+		gb->so2_volume = (val & BITS(4, 6)) >> 4;
+		gb->so1_vin = !!(val & BIT(3));
+		gb->so2_vin = !!(val & BIT(7));
+		break;
+
+	case GAMEBOY_ADDR_NR51:
+		gb->sq1.super.output_left = !!(val & BIT(0));
+		gb->sq2.super.output_left = !!(val & BIT(1));
+		gb->wave.super.output_left = !!(val & BIT(2));
+		gb->noise.super.output_left = !!(val & BIT(3));
+
+		gb->sq1.super.output_right = !!(val & BIT(4));
+		gb->sq2.super.output_right = !!(val & BIT(5));
+		gb->wave.super.output_right = !!(val & BIT(6));
+		gb->noise.super.output_right = !!(val & BIT(7));
+		break;
+
+	case GAMEBOY_ADDR_NR52:
+		if (val & BIT(7))
+			apu_enable(gb);
+		else
+			apu_disable(gb);
+		break;
+
+	case 0xFF30 ... 0xFF3F:
+	{
+		uint8_t offset = (addr % 0x10) * 2;
+		gb->wave.samples[offset + 0] = val >> 4;
+		gb->wave.samples[offset + 1] = val & 0x0F;
+		break;
+	}
 
 	case GAMEBOY_ADDR_LCDC:
 		gb->background_enabled = (val & BIT(0));

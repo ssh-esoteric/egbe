@@ -10,6 +10,7 @@ CFLAGS = \
 	-std=c11
 
 SRCS = \
+	apu.c \
 	cpu.c \
 	file.c \
 	lcd.c \

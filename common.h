@@ -7,6 +7,7 @@
 #include <stdlib.h>
 
 #define BIT(n) (1UL << (n))
+#define BITS(from, thru) ((~0UL - BIT(from)) - (((~0UL - BIT(thru)) << 1) | 1))
 
 #define GBLOG(msg, ...) \
 	fprintf(stderr, "%s (%s +%d): " msg "\n", \

@@ -17,6 +17,10 @@ struct view {
 	struct texture dbg_vram;
 };
 
+struct audio {
+	SDL_AudioDeviceID device_id;
+};
+
 static int texture_init(struct texture *t, struct SDL_Renderer *r)
 {
 	t->texture = SDL_CreateTexture(
@@ -109,6 +113,54 @@ static void on_vblank(struct gameboy *gb, void *context)
 	SDL_RenderPresent(v->renderer);
 }
 
+static int audio_init(struct audio *audio)
+{
+	int samples = 4096;
+	int channels = 2;
+	struct SDL_AudioSpec want = {
+		.freq = 44100,
+		.format = AUDIO_F32,
+		.channels = channels,
+		.samples = samples * channels,
+		// .callback = NULL,
+		// .userdata = NULL,
+	};
+	struct SDL_AudioSpec have;
+	audio->device_id = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
+
+	if (!audio->device_id) {
+		GBLOG("Failed to initialize SDL audio: %s", SDL_GetError());
+		return 1;
+	} else if (want.format != have.format) {
+		GBLOG("Audio format mismatch (got %d; need %d)",
+		      want.format, have.format);
+		return 1;
+	}
+
+	return 0;
+}
+
+static void audio_free(struct audio *audio)
+{
+	if (audio->device_id) {
+		SDL_ClearQueuedAudio(audio->device_id);
+		SDL_CloseAudioDevice(audio->device_id);
+	}
+}
+
+static void queue_audio(struct gameboy *gb, void *context)
+{
+	struct audio *audio = context;
+
+	SDL_QueueAudio(audio->device_id, gb->apu_sample, sizeof(float)*gb->apu_index);
+}
+
+static void toggle_channel(struct apu_channel *super, char *name)
+{
+	super->muted = !super->muted;
+	GBLOG("APU: %s %s", super->muted ? "Muted" : "Unmuted", name);
+}
+
 int main(int argc, char **argv)
 {
 	if (argc < 2) {
@@ -152,11 +204,30 @@ int main(int argc, char **argv)
 		gb->on_vblank.context = &view;
 	}
 
+	struct audio audio = {
+		.device_id = 0,
+	};
+
+	if (audio_init(&audio)) {
+		GBLOG("Failed to initialize SDL audio");
+	} else {
+		gb->on_apu_buffer_filled.callback = queue_audio;
+		gb->on_apu_buffer_filled.context = &audio;
+
+		SDL_PauseAudioDevice(audio.device_id, 0);
+	}
+
 	gameboy_insert_cartridge(gb, argv[1]);
 	if (argc >= 3)
 		gameboy_insert_boot_rom(gb, argv[2]);
 	if (argc >= 4)
 		gameboy_load_sram(gb, argv[3]);
+
+	// TODO: Temporary until the audio doesn't sound terrible
+	gb->sq1.super.muted = true;
+	gb->sq2.super.muted = true;
+	gb->wave.super.muted = true;
+	gb->noise.super.muted = true;
 
 	gameboy_restart(gb);
 	long next_joypad_in = 0;
@@ -175,6 +246,18 @@ int main(int argc, char **argv)
 				case SDLK_q:
 				case SDLK_ESCAPE:
 					gb->cpu_status = GAMEBOY_CPU_CRASHED;
+					break;
+				case SDLK_1:
+					toggle_channel(&gb->sq1.super, "Square 1");
+					break;
+				case SDLK_2:
+					toggle_channel(&gb->sq2.super, "Square 2");
+					break;
+				case SDLK_3:
+					toggle_channel(&gb->wave.super, "Wave");
+					break;
+				case SDLK_4:
+					toggle_channel(&gb->noise.super, "Noise");
 					break;
 				}
 				break;
@@ -207,6 +290,7 @@ int main(int argc, char **argv)
 	gameboy_free(gb);
 
 	view_free(&view);
+	audio_free(&audio);
 
 	return 0;
 }

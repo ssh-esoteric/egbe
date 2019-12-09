@@ -1,7 +1,8 @@
-#include "common.h"
+#include "apu.h"
 #include "cpu.h"
 #include "lcd.h"
 #include "mmu.h"
+#include "common.h"
 
 struct gameboy *gameboy_alloc(enum gameboy_system system)
 {
@@ -30,6 +31,7 @@ struct gameboy *gameboy_alloc(enum gameboy_system system)
 	gb->cpu_status = GAMEBOY_CPU_CRASHED;
 	gb->cycles = 0;
 
+	apu_init(gb);
 	lcd_init(gb);
 
 	return gb;

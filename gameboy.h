@@ -34,6 +34,28 @@ enum gameboy_addr {
 	GAMEBOY_ADDR_IF  = 0xFF0F,
 	GAMEBOY_ADDR_IE  = 0xFFFF,
 
+	GAMEBOY_ADDR_NR10 = 0xFF10,
+	GAMEBOY_ADDR_NR11 = 0xFF11,
+	GAMEBOY_ADDR_NR12 = 0xFF12,
+	GAMEBOY_ADDR_NR13 = 0xFF13,
+	GAMEBOY_ADDR_NR14 = 0xFF14,
+	GAMEBOY_ADDR_NR21 = 0xFF16,
+	GAMEBOY_ADDR_NR22 = 0xFF17,
+	GAMEBOY_ADDR_NR23 = 0xFF18,
+	GAMEBOY_ADDR_NR24 = 0xFF19,
+	GAMEBOY_ADDR_NR30 = 0xFF1A,
+	GAMEBOY_ADDR_NR31 = 0xFF1B,
+	GAMEBOY_ADDR_NR32 = 0xFF1C,
+	GAMEBOY_ADDR_NR33 = 0xFF1D,
+	GAMEBOY_ADDR_NR34 = 0xFF1E,
+	GAMEBOY_ADDR_NR41 = 0xFF20,
+	GAMEBOY_ADDR_NR42 = 0xFF21,
+	GAMEBOY_ADDR_NR43 = 0xFF22,
+	GAMEBOY_ADDR_NR44 = 0xFF23,
+	GAMEBOY_ADDR_NR50 = 0xFF24,
+	GAMEBOY_ADDR_NR51 = 0xFF25,
+	GAMEBOY_ADDR_NR52 = 0xFF26,
+
 	GAMEBOY_ADDR_LCDC = 0xFF40,
 	GAMEBOY_ADDR_STAT = 0xFF41,
 	GAMEBOY_ADDR_SCY  = 0xFF42,
@@ -116,6 +138,78 @@ enum gameboy_system {
 	GAMEBOY_SYSTEM_SGB2,
 };
 
+struct apu_envelope_module {
+	int volume_max;
+	int volume;
+	int delta; // 1 or -1
+
+	int clocks_max;
+	int clocks_remaining;
+};
+
+struct apu_length_module {
+	bool is_terminal; // Disable the channel when the length is done?
+
+	int clocks_max;
+	int clocks_remaining;
+};
+
+struct apu_sweep_module {
+	int shadow; // Shadow of frequency
+	int shift; // Shadow >> shift
+	int delta; // 1 or -1
+
+	int sweeps_max;
+	int sweeps_remaining;
+};
+
+struct apu_channel {
+	bool muted; // Emulator-only flag to supress channel output
+	bool enabled;
+	bool dac;
+
+	bool output_left;
+	bool output_right;
+
+	int frequency; // Frequency of CLOCKs; NOT (1/period) of waveform
+	int period;
+	long next_tick_in;
+};
+
+struct apu_square_channel {
+	struct apu_channel super;
+
+	uint8_t duty; // Duty wave from apu.c: duty_waves[4][8]
+	uint8_t duty_index;
+
+	struct apu_envelope_module envelope;
+	struct apu_length_module length;
+	struct apu_sweep_module sweep;
+};
+
+struct apu_wave_channel {
+	struct apu_channel super;
+
+	uint8_t volume_shift;
+
+	uint8_t samples[32];
+	uint8_t index;
+
+	struct apu_length_module length;
+};
+
+struct apu_noise_channel {
+	struct apu_channel super;
+
+	uint16_t lfsr;
+	uint16_t lfsr_mask; // Mask for 7-bit or 15-bit mode
+	uint8_t shift;
+	uint8_t divisor;
+
+	struct apu_envelope_module envelope;
+	struct apu_length_module length;
+};
+
 struct gameboy_callback {
 	void (*callback)(struct gameboy *gb, void *context);
 	void *context;
@@ -155,6 +249,25 @@ struct gameboy {
 	uint8_t timer_modulo;
 	uint8_t timer_frequency_code;
 	int timer_frequency_cycles;
+
+	bool apu_enabled;
+	long next_apu_frame_in;
+	uint8_t apu_frame;
+	uint8_t so1_volume;
+	uint8_t so2_volume;
+	bool so1_vin;
+	bool so2_vin;
+
+	// TODO: The APU currently assumes 2 float channels at 44100 Hz
+	long next_apu_sample;
+	size_t apu_index;
+	float apu_sample[2048];
+	struct gameboy_callback on_apu_buffer_filled;
+
+	struct apu_square_channel sq1;
+	struct apu_square_channel sq2;
+	struct apu_wave_channel wave;
+	struct apu_noise_channel noise;
 
 	bool lcd_enabled;
 	enum gameboy_lcd_status lcd_status;

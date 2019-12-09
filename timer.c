@@ -1,6 +1,6 @@
-#include "common.h"
 #include "cpu.h"
 #include "timer.h"
+#include "common.h"
 
 void timer_set_frequency(struct gameboy *gb, uint8_t val)
 {
