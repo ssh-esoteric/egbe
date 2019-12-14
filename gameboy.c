@@ -71,12 +71,20 @@ void gameboy_restart(struct gameboy *gb)
 	gb->sram_enabled = false;
 	gb->timer_enabled = false;
 
+	gameboy_update_joypad(gb, NULL);
+
 	lcd_init(gb);
 }
 
 // Note: Bits of P1 are _unset_ when the corresponding button is pressed
 void gameboy_update_joypad(struct gameboy *gb, struct gameboy_joypad *jp)
 {
+	if (!jp) {
+		struct gameboy_joypad clear = { 0 };
+		gameboy_update_joypad(gb, &clear);
+		return;
+	}
+
 	uint8_t old_arrows = gb->p1_arrows;
 	uint8_t old_buttons = gb->p1_buttons;
 
