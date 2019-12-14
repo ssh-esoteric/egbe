@@ -2,6 +2,7 @@
 #include "cpu.h"
 #include "lcd.h"
 #include "mmu.h"
+#include "serial.h"
 #include "timer.h"
 #include "common.h"
 
@@ -20,6 +21,7 @@ static void tick(struct gameboy *gb)
 
 	apu_sync(gb);
 	lcd_sync(gb);
+	serial_sync(gb);
 	timer_sync(gb);
 }
 

@@ -26,6 +26,9 @@ enum gameboy_addr {
 
 	GAMEBOY_ADDR_P1  = 0xFF00,
 
+	GAMEBOY_ADDR_SB  = 0xFF01,
+	GAMEBOY_ADDR_SC  = 0xFF02,
+
 	GAMEBOY_ADDR_DIV  = 0xFF04,
 	GAMEBOY_ADDR_TIMA = 0xFF05,
 	GAMEBOY_ADDR_TMA  = 0xFF06,
@@ -250,6 +253,13 @@ struct gameboy {
 	uint8_t timer_frequency_code;
 	int timer_frequency_cycles;
 
+	long next_serial_in;
+	bool is_serial_pending;
+	bool is_serial_internal;
+	uint8_t sb;
+	uint8_t next_sb;
+	struct gameboy_callback on_serial_start;
+
 	bool apu_enabled;
 	long next_apu_frame_in;
 	uint8_t apu_frame;
@@ -408,5 +418,7 @@ int gameboy_load_sram(struct gameboy *gb, char *path);
 int gameboy_save_sram(struct gameboy *gb, char *path);
 
 void gameboy_update_joypad(struct gameboy *gb, struct gameboy_joypad *jp);
+
+void gameboy_start_serial(struct gameboy *gb, uint8_t xfer);
 
 #endif

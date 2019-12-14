@@ -12,6 +12,7 @@ struct view {
 	struct SDL_Renderer *renderer;
 
 	struct texture screen;
+	struct texture alt_screen;
 	struct texture dbg_background;
 	struct texture dbg_window;
 	struct texture dbg_vram;
@@ -72,7 +73,10 @@ static int view_init(struct view *v)
 		return 1;
 	}
 
+	SDL_RenderClear(v->renderer);
+
 	return texture_init(&v->screen, v->renderer)
+	    || texture_init(&v->alt_screen, v->renderer)
 	    || texture_init(&v->dbg_background, v->renderer)
 	    || texture_init(&v->dbg_window, v->renderer)
 	    || texture_init(&v->dbg_vram, v->renderer);
@@ -81,6 +85,7 @@ static int view_init(struct view *v)
 static void view_free(struct view *v)
 {
 	texture_free(&v->screen);
+	texture_free(&v->alt_screen);
 	texture_free(&v->dbg_background);
 	texture_free(&v->dbg_window);
 	texture_free(&v->dbg_vram);
@@ -94,6 +99,9 @@ static void view_free(struct view *v)
 
 static void view_render_texture(struct view *v, struct texture *t)
 {
+	if (!t->pixels)
+		return;
+
 	SDL_UpdateTexture(t->texture, NULL, t->pixels, sizeof(int) * t->rect.w);
 
 	SDL_RenderCopy(v->renderer, t->texture, NULL, &t->rect);
@@ -103,9 +111,8 @@ static void on_vblank(struct gameboy *gb, void *context)
 {
 	struct view *v = context;
 
-	SDL_RenderClear(v->renderer);
-
 	view_render_texture(v, &v->screen);
+	view_render_texture(v, &v->alt_screen);
 	view_render_texture(v, &v->dbg_background);
 	view_render_texture(v, &v->dbg_window);
 	view_render_texture(v, &v->dbg_vram);
@@ -161,6 +168,19 @@ static void toggle_channel(struct apu_channel *super, char *name)
 	GBLOG("APU: %s %s", super->muted ? "Muted" : "Unmuted", name);
 }
 
+struct serial_context {
+	struct gameboy *lhs;
+	struct gameboy *rhs;
+};
+
+static void serial_sync(struct gameboy *gb, void *context)
+{
+	struct serial_context *serial = context;
+
+	gameboy_start_serial(serial->lhs, serial->rhs->sb);
+	gameboy_start_serial(serial->rhs, serial->lhs->sb);
+}
+
 int main(int argc, char **argv)
 {
 	if (argc < 2) {
@@ -178,10 +198,18 @@ int main(int argc, char **argv)
 	if (!gb)
 		return 1;
 
+	struct gameboy *alt_gb = NULL;
+	if (getenv("SERIAL"))
+		alt_gb = gameboy_alloc(GAMEBOY_SYSTEM_DMG);
+
 	struct view view = {
 		.screen = {
 			.pixels = gb->screen,
-			.rect = { .x = 264, .y = 264, .w = 160, .h = 144, },
+			.rect = { .x = 180, .y = 264, .w = 160, .h = 144, },
+		},
+		.alt_screen = {
+			.pixels = alt_gb ? alt_gb->screen : NULL,
+			.rect = { .x = 348, .y = 264, .w = 160, .h = 144, },
 		},
 		.dbg_background = {
 			.pixels = gb->dbg_background,
@@ -217,22 +245,56 @@ int main(int argc, char **argv)
 		SDL_PauseAudioDevice(audio.device_id, 0);
 	}
 
+	struct serial_context serial_gbs = {
+		.lhs = gb,
+		.rhs = alt_gb,
+	};
+	if (alt_gb) {
+		gb->on_serial_start.callback = serial_sync;
+		gb->on_serial_start.context = &serial_gbs;
+
+		alt_gb->on_serial_start.callback = serial_sync;
+		alt_gb->on_serial_start.context = &serial_gbs;
+	}
+
 	gameboy_insert_cartridge(gb, argv[1]);
-	if (argc >= 3)
+	if (alt_gb)
+		gameboy_insert_cartridge(alt_gb, argv[1]);
+
+	if (argc >= 3) {
 		gameboy_insert_boot_rom(gb, argv[2]);
-	if (argc >= 4)
+		if (alt_gb)
+			gameboy_insert_boot_rom(alt_gb, argv[2]);
+	}
+
+	if (argc >= 4) {
 		gameboy_load_sram(gb, argv[3]);
+		if (alt_gb)
+			gameboy_load_sram(alt_gb, argv[3]);
+	}
 
 	// TODO: Temporary until the audio doesn't sound terrible
 	gb->sq1.super.muted = true;
 	gb->sq2.super.muted = true;
 	gb->wave.super.muted = true;
 	gb->noise.super.muted = true;
-
 	gameboy_restart(gb);
-	long next_joypad_in = 0;
+
+	if (alt_gb) {
+		alt_gb->sq1.super.muted = true;
+		alt_gb->sq2.super.muted = true;
+		alt_gb->wave.super.muted = true;
+		alt_gb->noise.super.muted = true;
+		gameboy_restart(alt_gb);
+	}
+
+	struct gameboy *curr_gb = gb;
+
+	long joypad_ticks = 0;
 	while (gb->cpu_status != GAMEBOY_CPU_CRASHED) {
 		gameboy_tick(gb);
+		if (alt_gb)
+			gameboy_tick(alt_gb);
 
 		SDL_Event event;
 		while (SDL_PollEvent(&event)) {
@@ -259,13 +321,19 @@ int main(int argc, char **argv)
 				case SDLK_4:
 					toggle_channel(&gb->noise.super, "Noise");
 					break;
+				case SDLK_LCTRL:
+					if (alt_gb) {
+						gameboy_update_joypad(curr_gb, NULL);
+						curr_gb = (curr_gb == gb) ? alt_gb : gb;
+					}
+					break;
 				}
 				break;
 			}
 		}
 
-		if (gb->cycles > next_joypad_in) {
-			next_joypad_in += 20000;
+		if (++joypad_ticks > 5000) {
+			joypad_ticks = 0;
 
 			const uint8_t *keys = SDL_GetKeyboardState(NULL);
 
@@ -280,7 +348,7 @@ int main(int argc, char **argv)
 				.select = keys[SDL_SCANCODE_RSHIFT],
 				.start  = keys[SDL_SCANCODE_RETURN],
 			};
-			gameboy_update_joypad(gb, &jp);
+			gameboy_update_joypad(curr_gb, &jp);
 		}
 	}
 
@@ -288,6 +356,8 @@ int main(int argc, char **argv)
 		gameboy_save_sram(gb, argv[3]);
 
 	gameboy_free(gb);
+	if (alt_gb)
+		gameboy_free(alt_gb);
 
 	view_free(&view);
 	audio_free(&audio);

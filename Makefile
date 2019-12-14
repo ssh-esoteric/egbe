@@ -15,6 +15,7 @@ SRCS = \
 	file.c \
 	lcd.c \
 	mmu.c \
+	serial.c \
 	timer.c \
 	gameboy.c
 OBJS = $(SRCS:.c=.o)

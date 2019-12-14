@@ -151,6 +151,16 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 		else
 			return gb->p1_buttons;
 
+	case GAMEBOY_ADDR_SB:
+		if (gb->is_serial_pending)
+			GBLOG("Mid-transfer read from SB!");
+		return gb->sb;
+
+	case GAMEBOY_ADDR_SC:
+		return BITS(1, 6)
+		     | (gb->is_serial_pending ? BIT(7) : 0)
+		     | (gb->is_serial_internal ? BIT(0) : 0);
+
 	case GAMEBOY_ADDR_DIV:
 		return (gb->cycles >> 8) & 0xFF;
 
@@ -297,6 +307,27 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 			gb->joypad_status = GAMEBOY_JOYPAD_BUTTONS;
 		break;
 
+	case GAMEBOY_ADDR_SB:
+		if (gb->is_serial_pending)
+			GBLOG("Mid-transfer write to SB!");
+		gb->sb = val;
+		break;
+
+	case GAMEBOY_ADDR_SC:
+		if (gb->is_serial_pending)
+			GBLOG("Mid-transfer write to SC!");
+
+		gb->is_serial_internal = !!(val & BIT(0));
+
+		if (!gb->is_serial_pending && gb->is_serial_internal && (val & BIT(7))) {
+			if (gb->on_serial_start.callback)
+				gb->on_serial_start.callback(gb, gb->on_serial_start.context);
+			else
+				// Disconnected serial cables still "send" this
+				gameboy_start_serial(gb, 0xFF);
+		}
+		break;
+
 	case GAMEBOY_ADDR_DIV:
 		gb->next_apu_frame_in -= gb->cycles;
 		gb->sq1.super.next_tick_in -= gb->cycles;
@@ -304,6 +335,7 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 		gb->wave.super.next_tick_in -= gb->cycles;
 		gb->noise.super.next_tick_in -= gb->cycles;
 		gb->next_lcd_status_in -= gb->cycles;
+		gb->next_serial_in -= gb->cycles;
 		gb->next_timer_in -= gb->cycles;
 		gb->cycles = 0;
 		break;
