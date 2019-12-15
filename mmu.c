@@ -220,6 +220,124 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 
 	case GAMEBOY_ADDR_OBP1:
 		return gb->obp[1];
+
+	case GAMEBOY_ADDR_NR10:
+		return gb->sq1.sweep.shift
+		     | (gb->sq1.sweep.delta < 0 ? BIT(3) : 0)
+		     | (gb->sq1.sweep.sweeps_max << 4)
+		     | BIT(7);
+
+	case GAMEBOY_ADDR_NR11:
+		return BITS(0, 5)
+		     | (gb->sq1.duty << 6);
+
+	case GAMEBOY_ADDR_NR12:
+		return gb->sq1.envelope.clocks_max
+		     | (gb->sq1.envelope.delta > 0 ? BIT(3) : 0)
+		     | (gb->sq1.envelope.volume_max << 4);
+
+	case GAMEBOY_ADDR_NR13:
+		return BITS(0, 7);
+
+	case GAMEBOY_ADDR_NR14:
+		return BITS(0, 2) // Write-only frequency
+		     | BITS(3, 5) // Undefined
+		     | (gb->sq1.length.is_terminal ? BIT(6) : 0)
+		     | BIT(7);
+
+	case GAMEBOY_ADDR_NR21:
+		return BITS(0, 5)
+		     | (gb->sq2.duty << 6);
+
+	case GAMEBOY_ADDR_NR22:
+		return gb->sq2.envelope.clocks_max
+		     | (gb->sq2.envelope.delta > 0 ? BIT(3) : 0)
+		     | (gb->sq2.envelope.volume_max << 4);
+
+	case GAMEBOY_ADDR_NR23:
+		return BITS(0, 7);
+
+	case GAMEBOY_ADDR_NR24:
+		return BITS(0, 2) // Write-only frequency
+		     | BITS(3, 5) // Undefined
+		     | (gb->sq2.length.is_terminal ? BIT(6) : 0)
+		     | BIT(7);
+
+	case GAMEBOY_ADDR_NR30:
+		return BITS(0, 6)
+		     | (gb->wave.super.dac ? BIT(7) : 0);
+
+	case GAMEBOY_ADDR_NR31:
+		return BITS(0, 7); // Pretty sure this is write-only?
+
+	case GAMEBOY_ADDR_NR32:
+		switch (gb->wave.volume_shift) {
+		case 0: return BITS(0, 4) | (1 << 5) | BIT(7);
+		case 1: return BITS(0, 4) | (2 << 5) | BIT(7);
+		case 2: return BITS(0, 4) | (3 << 5) | BIT(7);
+		case 4: return BITS(0, 4) | (0 << 5) | BIT(7);
+		}
+		GBLOG("Invalid wave volume shift: %d", gb->wave.volume_shift);
+		break;
+
+	case GAMEBOY_ADDR_NR33:
+		return BITS(0, 7);
+
+	case GAMEBOY_ADDR_NR34:
+		return BITS(0, 2) // Write-only frequency
+		     | BITS(3, 5) // Undefined
+		     | (gb->wave.length.is_terminal ? BIT(6) : 0)
+		     | BIT(7);
+
+	case 0xFF30 ... 0xFF3F:
+	{
+		uint8_t offset = (addr % 0x10) * 2;
+		return (gb->wave.samples[offset] << 4) | gb->wave.samples[offset + 1];
+	}
+
+	case GAMEBOY_ADDR_NR41:
+		return BITS(0, 5) // TODO: W or R/W?
+		     | BITS(6, 7);
+
+	case GAMEBOY_ADDR_NR42:
+		return gb->noise.envelope.clocks_max
+		     | (gb->noise.envelope.delta > 0 ? BIT(3) : 0)
+		     | (gb->noise.envelope.volume_max << 4);
+
+	case GAMEBOY_ADDR_NR43:
+		return gb->noise.divisor
+		     | (gb->noise.lfsr_mask == 0x4040 ? BIT(3) : 0)
+		     | (gb->noise.shift << 4);
+
+	case GAMEBOY_ADDR_NR44:
+		return BITS(0, 2) // Write-only frequency
+		     | BITS(3, 5) // Undefined
+		     | (gb->noise.length.is_terminal ? BIT(6) : 0)
+		     | BIT(7);
+
+	case GAMEBOY_ADDR_NR50:
+		return gb->so1_volume
+		     | (gb->so1_vin ? BIT(3) : 0)
+		     | (gb->so2_volume << 4)
+		     | (gb->so2_vin ? BIT(7) : 0);
+
+	case GAMEBOY_ADDR_NR51:
+		return (gb->sq1.super.output_left ? BIT(0) : 0)
+		     | (gb->sq2.super.output_left ? BIT(1) : 0)
+		     | (gb->wave.super.output_left ? BIT(2) : 0)
+		     | (gb->noise.super.output_left ? BIT(3) : 0)
+		     | (gb->sq1.super.output_right ? BIT(4) : 0)
+		     | (gb->sq2.super.output_right ? BIT(5) : 0)
+		     | (gb->wave.super.output_right ? BIT(6) : 0)
+		     | (gb->noise.super.output_right ? BIT(7) : 0);
+
+	case GAMEBOY_ADDR_NR52:
+		return (gb->sq1.super.enabled ? BIT(0) : 0)
+		     | (gb->sq2.super.enabled ? BIT(1) : 0)
+		     | (gb->wave.super.enabled ? BIT(2) : 0)
+		     | (gb->noise.super.enabled ? BIT(3) : 0)
+		     | BITS(4, 6)
+		     | (gb->apu_enabled ? BIT(7) : 0);
 	}
 
 	return 0xFF; // "Undefined" read
