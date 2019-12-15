@@ -65,7 +65,7 @@ static int view_init(struct view *v)
 	v->renderer = SDL_CreateRenderer(
 		v->window,
 		-1,
-		SDL_RENDERER_TARGETTEXTURE // | SDL_RENDERER_PRESENTVSYNC
+		SDL_RENDERER_TARGETTEXTURE | SDL_RENDERER_PRESENTVSYNC
 	);
 
 	if (!v->renderer) {
@@ -296,44 +296,44 @@ int main(int argc, char **argv)
 		if (alt_gb)
 			gameboy_tick(alt_gb);
 
-		SDL_Event event;
-		while (SDL_PollEvent(&event)) {
-			switch (event.type) {
-			case SDL_QUIT:
-				gb->cpu_status = GAMEBOY_CPU_CRASHED;
-				break;
+		if (++joypad_ticks > 5000) {
+			joypad_ticks = 0;
 
-			case SDL_KEYDOWN:
-				switch (event.key.keysym.sym) {
-				case SDLK_q:
-				case SDLK_ESCAPE:
+			SDL_Event event;
+			while (SDL_PollEvent(&event)) {
+				switch (event.type) {
+				case SDL_QUIT:
 					gb->cpu_status = GAMEBOY_CPU_CRASHED;
 					break;
-				case SDLK_1:
-					toggle_channel(&gb->sq1.super, "Square 1");
-					break;
-				case SDLK_2:
-					toggle_channel(&gb->sq2.super, "Square 2");
-					break;
-				case SDLK_3:
-					toggle_channel(&gb->wave.super, "Wave");
-					break;
-				case SDLK_4:
-					toggle_channel(&gb->noise.super, "Noise");
-					break;
-				case SDLK_LCTRL:
-					if (alt_gb) {
-						gameboy_update_joypad(curr_gb, NULL);
-						curr_gb = (curr_gb == gb) ? alt_gb : gb;
+
+				case SDL_KEYDOWN:
+					switch (event.key.keysym.sym) {
+					case SDLK_q:
+					case SDLK_ESCAPE:
+						gb->cpu_status = GAMEBOY_CPU_CRASHED;
+						break;
+					case SDLK_1:
+						toggle_channel(&gb->sq1.super, "Square 1");
+						break;
+					case SDLK_2:
+						toggle_channel(&gb->sq2.super, "Square 2");
+						break;
+					case SDLK_3:
+						toggle_channel(&gb->wave.super, "Wave");
+						break;
+					case SDLK_4:
+						toggle_channel(&gb->noise.super, "Noise");
+						break;
+					case SDLK_LCTRL:
+						if (alt_gb) {
+							gameboy_update_joypad(curr_gb, NULL);
+							curr_gb = (curr_gb == gb) ? alt_gb : gb;
+						}
+						break;
 					}
 					break;
 				}
-				break;
 			}
-		}
-
-		if (++joypad_ticks > 5000) {
-			joypad_ticks = 0;
 
 			const uint8_t *keys = SDL_GetKeyboardState(NULL);
 
