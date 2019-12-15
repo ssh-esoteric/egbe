@@ -3,16 +3,21 @@
 #include "common.h"
 #include <sys/param.h>
 
-static int to_color(int color, uint8_t palette)
+static inline int to_dmg(int color)
 {
-	color = palette >> (2 * (color & 0x03));
+	// 0: White
+	// 1: Light Grey
+	// 2: Dark Grey
+	// 3: Black
+	return (3 - (color & 0x03)) * 0x00555555;
+}
 
-	switch (color & 0x03) {
-	case 0:  return 0x00FFFFFF;
-	case 1:  return 0x00BBBBBB;
-	case 2:  return 0x00555555;
-	default: return 0x00000000;
-	}
+void lcd_update_palette(struct gameboy_palette *p, uint8_t val)
+{
+	p->colors[0] = to_dmg((val & BITS(0, 1)) >> 0);
+	p->colors[1] = to_dmg((val & BITS(2, 3)) >> 2);
+	p->colors[2] = to_dmg((val & BITS(4, 5)) >> 4);
+	p->colors[3] = to_dmg((val & BITS(6, 7)) >> 6);
 }
 
 static void render_debug(struct gameboy *gb)
@@ -27,7 +32,7 @@ static void render_debug(struct gameboy *gb)
 					int x = (8 * tx) + dx;
 					int color = t->pixels[dy][dx];
 
-					gb->dbg_vram[y][x] = to_color(color, gb->bgp);
+					gb->dbg_vram[y][x] = gb->bgp.colors[color];
 				}
 			}
 		}
@@ -43,7 +48,7 @@ static void render_debug(struct gameboy *gb)
 					int x = (8 * tx) + dx;
 					int color = t->pixels[dy][dx];
 
-					gb->dbg_background[y][x] = to_color(color, gb->bgp);
+					gb->dbg_background[y][x] = gb->bgp.colors[color];
 				}
 			}
 		}
@@ -59,7 +64,7 @@ static void render_debug(struct gameboy *gb)
 					int x = (8 * tx) + dx;
 					int color = t->pixels[dy][dx];
 
-					gb->dbg_window[y][x] = to_color(color, gb->bgp);
+					gb->dbg_window[y][x] = gb->bgp.colors[color];
 				}
 			}
 		}
@@ -103,7 +108,7 @@ static void render_scanline(struct gameboy *gb)
 
 		uint8_t code = t->pixels[dy % 8][dx % 8];
 		line[x] = code;
-		gb->screen[y][x] = to_color(code, gb->bgp);
+		gb->screen[y][x] = gb->bgp.colors[code];
 	}
 
 	dy = y - gb->wy;
@@ -114,7 +119,7 @@ static void render_scanline(struct gameboy *gb)
 
 		uint8_t code = t->pixels[dy % 8][dx % 8];
 		line[x] = code;
-		gb->screen[y][x] = to_color(code, gb->bgp);
+		gb->screen[y][x] = gb->bgp.colors[code];
 	}
 
 	for (int i = 0; i < 40; ++i) {
@@ -150,7 +155,7 @@ static void render_scanline(struct gameboy *gb)
 				continue;
 
 			line[dx] = code;
-			gb->screen[y][dx] = to_color(code, gb->obp[s->palette]);
+			gb->screen[y][dx] = s->palette->colors[code];
 		}
 
 		// TODO: Stop after 10th sprite per scanline
@@ -180,8 +185,11 @@ void lcd_init(struct gameboy *gb)
 
 	gb->sprite_size = 8;
 	gb->sprites_unsorted = true;
-	for (int i = 0; i < 40; ++i)
+	for (int i = 0; i < 40; ++i) {
+		gb->sprites[i].palette = &gb->obp[0];
+
 		gb->sprites_sorted[i] = &gb->sprites[i];
+	}
 
 	gb->lcd_enabled = true;
 	lcd_disable(gb);
@@ -291,7 +299,8 @@ void lcd_update_sprite(struct gameboy *gb, uint16_t offset, uint8_t val)
 		break;
 
 	case 3:
-		s->palette = !!(val & BIT(4));
+		s->palette_number = !!(val & BIT(4));
+		s->palette = &gb->obp[s->palette_number];
 		s->flipx = !!(val & BIT(5));
 		s->flipy = !!(val & BIT(6));
 		s->priority = !!(val & BIT(7));

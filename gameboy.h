@@ -230,6 +230,10 @@ struct gameboy_joypad {
 	bool start;
 };
 
+struct gameboy_palette {
+	int colors[4];
+};
+
 struct gameboy {
 	unsigned int features;
 	enum gameboy_mbc mbc;
@@ -291,8 +295,8 @@ struct gameboy {
 	uint8_t wy;
 	uint8_t wx;
 	uint8_t dma;
-	uint8_t bgp;
-	uint8_t obp[2];
+	uint8_t bgp_raw;
+	uint8_t obp_raw[2];
 	uint8_t sprite_size;
 	bool sprites_enabled;
 	bool background_enabled;
@@ -301,6 +305,9 @@ struct gameboy {
 	bool stat_on_vblank;
 	bool stat_on_oam_search;
 	bool stat_on_scanline;
+
+	struct gameboy_palette bgp;
+	struct gameboy_palette obp[2];
 
 	struct gameboy_callback on_vblank;
 	int screen[144][160];
@@ -315,7 +322,8 @@ struct gameboy {
 		bool priority;
 		bool flipy;
 		bool flipx;
-		bool palette;
+		uint8_t palette_number; // DMG: 0-1; GBC: 0-7
+		struct gameboy_palette *palette;
 	} sprites[40];
 	struct sprite *sprites_sorted[40];
 	bool sprites_unsorted;

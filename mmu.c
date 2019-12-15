@@ -213,13 +213,13 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 		return gb->wx + 7;
 
 	case GAMEBOY_ADDR_BGP:
-		return gb->bgp;
+		return gb->bgp_raw;
 
 	case GAMEBOY_ADDR_OBP0:
-		return gb->obp[0];
+		return gb->obp_raw[0];
 
 	case GAMEBOY_ADDR_OBP1:
-		return gb->obp[1];
+		return gb->obp_raw[1];
 
 	case GAMEBOY_ADDR_NR10:
 		return gb->sq1.sweep.shift
@@ -698,15 +698,18 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 		break;
 
 	case GAMEBOY_ADDR_BGP:
-		gb->bgp = val;
+		gb->bgp_raw = val;
+		lcd_update_palette(&gb->bgp, val);
 		break;
 
 	case GAMEBOY_ADDR_OBP0:
-		gb->obp[0] = val;
+		gb->obp_raw[0] = val;
+		lcd_update_palette(&gb->obp[0], val);
 		break;
 
 	case GAMEBOY_ADDR_OBP1:
-		gb->obp[1] = val;
+		gb->obp_raw[1] = val;
+		lcd_update_palette(&gb->obp[1], val);
 		break;
 
 	case GAMEBOY_ADDR_BOOT_SWITCH:
