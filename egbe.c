@@ -73,8 +73,6 @@ static int view_init(struct view *v)
 		return 1;
 	}
 
-	SDL_RenderClear(v->renderer);
-
 	return texture_init(&v->screen, v->renderer)
 	    || texture_init(&v->alt_screen, v->renderer)
 	    || texture_init(&v->dbg_background, v->renderer)
@@ -110,6 +108,8 @@ static void view_render_texture(struct view *v, struct texture *t)
 static void on_vblank(struct gameboy *gb, void *context)
 {
 	struct view *v = context;
+
+	SDL_RenderClear(v->renderer);
 
 	view_render_texture(v, &v->screen);
 	view_render_texture(v, &v->alt_screen);
