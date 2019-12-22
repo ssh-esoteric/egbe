@@ -3,36 +3,61 @@
 #include "common.h"
 #include <sys/param.h>
 
-static inline int to_dmg(int color)
+// Used to more easily debug VRAM (no changing palette or duplicated colors)
+static const struct gameboy_palette monochrome = {
+	.colors = {
+		0x00FFFFFF,
+		0x00BBBBBB,
+		0x00555555,
+		0x00000000,
+	},
+};
+
+void lcd_update_palette_dmg(struct gameboy_palette *p, uint8_t val)
 {
-	// 0: White
-	// 1: Light Grey
-	// 2: Dark Grey
-	// 3: Black
-	return (3 - (color & 0x03)) * 0x00555555;
+	p->colors[0] = monochrome.colors[(val & BITS(0, 1)) >> 0];
+	p->colors[1] = monochrome.colors[(val & BITS(2, 3)) >> 2];
+	p->colors[2] = monochrome.colors[(val & BITS(4, 5)) >> 4];
+	p->colors[3] = monochrome.colors[(val & BITS(6, 7)) >> 6];
 }
 
-void lcd_update_palette(struct gameboy_palette *p, uint8_t val)
+static inline void set_cell_tile_index(struct gameboy *gb,
+                                       struct gameboy_background_cell *cell,
+                                       uint8_t val)
 {
-	p->colors[0] = to_dmg((val & BITS(0, 1)) >> 0);
-	p->colors[1] = to_dmg((val & BITS(2, 3)) >> 2);
-	p->colors[2] = to_dmg((val & BITS(4, 5)) >> 4);
-	p->colors[3] = to_dmg((val & BITS(6, 7)) >> 6);
+	int index = gb->tilemap_signed ? (256 + (int8_t)val) : val;
+
+	cell->tile_index = val;
+	cell->tile = &gb->tiles[cell->vram_bank][index];
+}
+
+static inline void set_sprite_tile_index(struct gameboy *gb,
+                                         struct gameboy_sprite *sprite,
+                                         uint8_t val)
+{
+	sprite->tile_index = val;
+	if (gb->sprite_size == 16)
+		sprite->tile = &gb->tiles[sprite->vram_bank][val & 0xFE];
+	else
+		sprite->tile = &gb->tiles[sprite->vram_bank][val];
 }
 
 static void render_debug(struct gameboy *gb)
 {
+	struct gameboy_background_cell *cell;
+	struct gameboy_tile *tile;
+
 	for (int ty = 0; ty < 24; ++ty) {
 		for (int tx = 0; tx < 16; ++tx) {
-			struct tile *t = &gb->tiles[(16 * ty) + tx];
+			tile = &gb->tiles[0][(16 * ty) + tx];
 
 			for (int dy = 0; dy < 8; ++dy) {
 				for (int dx = 0; dx < 8; ++dx) {
 					int y = (8 * ty) + dy;
 					int x = (8 * tx) + dx;
-					int color = t->pixels[dy][dx];
+					int color = tile->pixels[dy][dx];
 
-					gb->dbg_vram[y][x] = gb->bgp.colors[color];
+					gb->dbg_vram[y][x] = monochrome.colors[color];
 				}
 			}
 		}
@@ -40,15 +65,15 @@ static void render_debug(struct gameboy *gb)
 
 	for (int ty = 0; ty < 32; ++ty) {
 		for (int tx = 0; tx < 32; ++tx) {
-			struct tile *t = gb->background_tilemap[(32 * ty) + tx];
+			cell = &gb->background_tilemap->cells[ty][tx];
 
 			for (int dy = 0; dy < 8; ++dy) {
 				for (int dx = 0; dx < 8; ++dx) {
 					int y = (8 * ty) + dy;
 					int x = (8 * tx) + dx;
-					int color = t->pixels[dy][dx];
+					int color = cell->tile->pixels[dy][dx];
 
-					gb->dbg_background[y][x] = gb->bgp.colors[color];
+					gb->dbg_background[y][x] = cell->palette->colors[color];
 				}
 			}
 		}
@@ -56,15 +81,15 @@ static void render_debug(struct gameboy *gb)
 
 	for (int ty = 0; ty < 32; ++ty) {
 		for (int tx = 0; tx < 32; ++tx) {
-			struct tile *t = gb->window_tilemap[(32 * ty) + tx];
+			cell = &gb->window_tilemap->cells[ty][tx];
 
 			for (int dy = 0; dy < 8; ++dy) {
 				for (int dx = 0; dx < 8; ++dx) {
 					int y = (8 * ty) + dy;
 					int x = (8 * tx) + dx;
-					int color = t->pixels[dy][dx];
+					int color = cell->tile->pixels[dy][dx];
 
-					gb->dbg_window[y][x] = gb->bgp.colors[color];
+					gb->dbg_window[y][x] = cell->palette->colors[color];
 				}
 			}
 		}
@@ -73,8 +98,8 @@ static void render_debug(struct gameboy *gb)
 
 static int sprite_qsort(const void *p1, const void *p2)
 {
-	const struct sprite *lhs = p1;
-	const struct sprite *rhs = p2;
+	const struct gameboy_sprite *lhs = p1;
+	const struct gameboy_sprite *rhs = p2;
 
 	if (lhs->x != rhs->x)
 		return (lhs->x < rhs->x) ? -1 : 1;
@@ -104,39 +129,38 @@ static void render_scanline(struct gameboy *gb)
 
 		uint8_t dx = x + gb->sx;
 
-		struct tile *t = gb->background_tilemap[(dy / 8 * 32) + (dx / 8)];
+		struct gameboy_background_cell *cell;
+		cell = &gb->background_tilemap->cells[dy / 8][dx / 8];
 
-		uint8_t code = t->pixels[dy % 8][dx % 8];
+		uint8_t code = cell->tile->pixels[dy % 8][dx % 8];
 		line[x] = code;
-		gb->screen[y][x] = gb->bgp.colors[code];
+		gb->screen[y][x] = cell->palette->colors[code];
 	}
 
 	dy = y - gb->wy;
 	for (int x = window_start; x < 160; ++x) {
 		uint8_t dx = x - gb->wx;
 
-		struct tile *t = gb->window_tilemap[(dy / 8 * 32) + (dx / 8)];
+		struct gameboy_background_cell *cell;
+		cell = &gb->window_tilemap->cells[dy / 8][dx / 8];
 
-		uint8_t code = t->pixels[dy % 8][dx % 8];
+		uint8_t code = cell->tile->pixels[dy % 8][dx % 8];
 		line[x] = code;
-		gb->screen[y][x] = gb->bgp.colors[code];
+		gb->screen[y][x] = cell->palette->colors[code];
 	}
 
 	for (int i = 0; i < 40; ++i) {
-		struct sprite *s = gb->sprites_sorted[i];
+		struct gameboy_sprite *s = gb->sprites_sorted[i];
 
 		dy = y - s->y;
 		if (dy >= gb->sprite_size)
 			continue;
 
-		int index;
-		if (gb->sprite_size == 16)
-			index = (s->index & ~0x01) | ((dy > 7) ? 0x01 : 0x00);
-		else
-			index = s->index;
+		struct gameboy_tile *tile = s->tile;
+		if (dy > 7)
+			++tile; // 8x16 mode: use next tile
 
-		struct tile *t = &gb->tiles[index];
-		uint8_t *row = t->pixels[s->flipy ? (7 - (dy % 8)) : (dy % 8)];
+		uint8_t *row = tile->pixels[s->flipy ? (7 - (dy % 8)) : (dy % 8)];
 
 		for (int sx = 0; sx < 8; ++sx) {
 			uint8_t dx = s->x + sx;
@@ -177,18 +201,25 @@ static void enter_vblank(struct gameboy *gb)
 
 void lcd_init(struct gameboy *gb)
 {
+	gb->background_tilemap = &gb->tilemaps[0];
+	gb->window_tilemap = &gb->tilemaps[1];
+
 	gb->tilemap_signed = true;
-	lcd_update_tilemap_cache(gb, false);
+	lcd_update_tilemap_mode(gb, false);
 
-	gb->background_tilemap = gb->tilemap[0];
-	gb->window_tilemap = gb->tilemap[1];
+	gb->sprite_size = 16;
+	lcd_update_sprite_mode(gb, false);
 
-	gb->sprite_size = 8;
 	gb->sprites_unsorted = true;
 	for (int i = 0; i < 40; ++i) {
 		gb->sprites[i].palette = &gb->obp[0];
 
 		gb->sprites_sorted[i] = &gb->sprites[i];
+	}
+
+	for (int i = 0; i < 1024; ++i) {
+		gb->tilemaps[0].cells_flat[i].palette = &gb->bgp[0];
+		gb->tilemaps[1].cells_flat[i].palette = &gb->bgp[0];
 	}
 
 	gb->lcd_enabled = true;
@@ -280,9 +311,20 @@ void lcd_update_scanline(struct gameboy *gb, uint8_t scanline)
 		irq_flag(gb, GAMEBOY_IRQ_STAT);
 }
 
+uint8_t lcd_read_sprite(struct gameboy *gb, uint16_t offset)
+{
+	struct gameboy_sprite *s = &gb->sprites[offset / 4];
+	switch (offset % 4) {
+	case 0:  return s->y + 16;
+	case 1:  return s->x + 8;
+	case 2:  return s->tile_index;
+	default: return s->raw_flags;
+	}
+}
+
 void lcd_update_sprite(struct gameboy *gb, uint16_t offset, uint8_t val)
 {
-	struct sprite *s = &gb->sprites[offset / 4];
+	struct gameboy_sprite *s = &gb->sprites[offset / 4];
 	switch (offset % 4) {
 	case 0:
 		s->y = val - 16;
@@ -295,12 +337,13 @@ void lcd_update_sprite(struct gameboy *gb, uint16_t offset, uint8_t val)
 		break;
 
 	case 2:
-		s->index = val;
+		set_sprite_tile_index(gb, s, val);
 		break;
 
 	case 3:
-		s->palette_number = !!(val & BIT(4));
-		s->palette = &gb->obp[s->palette_number];
+		s->raw_flags = val;
+		s->palette_index = !!(val & BIT(4));
+		s->palette = &gb->obp[s->palette_index];
 		s->flipx = !!(val & BIT(5));
 		s->flipy = !!(val & BIT(6));
 		s->priority = !!(val & BIT(7));
@@ -308,9 +351,30 @@ void lcd_update_sprite(struct gameboy *gb, uint16_t offset, uint8_t val)
 	}
 }
 
+void lcd_update_sprite_mode(struct gameboy *gb, bool is_8x16)
+{
+	uint8_t new_sprite_size = is_8x16 ? 16 : 8;
+	if (new_sprite_size == gb->sprite_size)
+		return;
+	gb->sprite_size = new_sprite_size;
+
+	for (int i = 0; i < 40; ++i) {
+		struct gameboy_sprite *s = &gb->sprites[i];
+
+		set_sprite_tile_index(gb, s, s->tile_index);
+	}
+}
+
+uint8_t lcd_read_tile(struct gameboy *gb, uint16_t offset)
+{
+	struct gameboy_tile *t = &gb->tiles[gb->vram_bank][offset / 16];
+
+	return t->raw[offset % 16];
+}
+
 void lcd_update_tile(struct gameboy *gb, uint16_t offset, uint8_t val)
 {
-	struct tile *t = &gb->tiles[offset / 16];
+	struct gameboy_tile *t = &gb->tiles[gb->vram_bank][offset / 16];
 	t->raw[offset % 16] = val;
 
 	uint8_t *row = t->pixels[(offset / 2) % 8];
@@ -324,22 +388,49 @@ void lcd_update_tile(struct gameboy *gb, uint16_t offset, uint8_t val)
 	}
 }
 
-void lcd_update_tilemap(struct gameboy *gb, uint16_t offset, uint8_t val)
+uint8_t lcd_read_tilemap(struct gameboy *gb, uint16_t offset)
 {
-	struct tile *t = gb->tilemap_signed
-		? &gb->tiles[256 + (int8_t)val]
-		: &gb->tiles[val];
+	struct gameboy_background_table *table = &gb->tilemaps[offset / 0x0400];
 
-	gb->tilemap_raw[offset] = val;
-	gb->tilemap[offset >= 0x0400][offset % 0x0400] = t;
+	struct gameboy_background_cell *cell = &table->cells_flat[offset % 0x0400];
+
+	if (gb->vram_bank)
+		return cell->raw_flags;
+	else
+		return cell->tile_index;
 }
 
-void lcd_update_tilemap_cache(struct gameboy *gb, bool is_signed)
+void lcd_update_tilemap(struct gameboy *gb, uint16_t offset, uint8_t val)
+{
+	struct gameboy_background_cell *cell;
+
+	cell = &gb->tilemaps[offset >= 0x0400].cells_flat[offset % 0x0400];
+
+	if (gb->vram_bank) {
+		cell->palette_index = (val & BITS(0, 2));
+		cell->vram_bank = !!(val & BIT(3));
+		cell->flipx = !!(val & BIT(5));
+		cell->flipy = !!(val & BIT(6));
+		cell->priority = !!(val & BIT(7));
+
+		set_cell_tile_index(gb, cell, cell->tile_index);
+	} else {
+		set_cell_tile_index(gb, cell, val);
+	}
+}
+
+void lcd_update_tilemap_mode(struct gameboy *gb, bool is_signed)
 {
 	if (gb->tilemap_signed == is_signed)
 		return;
-
 	gb->tilemap_signed = is_signed;
-	for (int i = 0; i < 0x0800; ++i)
-		lcd_update_tilemap(gb, i, gb->tilemap_raw[i]);
+
+	struct gameboy_background_cell *cell;
+	for (int i = 0; i < 0x0400; ++i) {
+		cell = &gb->tilemaps[0].cells_flat[i];
+		set_cell_tile_index(gb, cell, cell->tile_index);
+
+		cell = &gb->tilemaps[1].cells_flat[i];
+		set_cell_tile_index(gb, cell, cell->tile_index);
+	}
 }

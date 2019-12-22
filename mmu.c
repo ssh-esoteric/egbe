@@ -111,11 +111,11 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 
 	case 0x8000 ... 0x97FF:
 		if (is_vram_accessible(gb))
-			return gb->tiles[(addr % 0x2000) / 16].raw[addr % 16];
+			return lcd_read_tile(gb, addr % 0x2000);
 		break;
 	case 0x9800 ... 0x9FFF:
 		if (is_vram_accessible(gb))
-			return gb->tilemap_raw[addr % 0x0800];
+			return lcd_read_tilemap(gb, addr % 0x0800);
 		break;
 
 	case 0xA000 ... 0xBFFF:
@@ -134,7 +134,9 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 		break;
 
 	case 0xFE00 ... 0xFE9F:
-		break; // TODO: OAM
+		if (is_oam_accessible(gb))
+			return lcd_read_sprite(gb, addr % 0x0100);
+		break;
 
 	case 0xFF80 ... 0xFFFE:
 		return gb->hram[addr % 0x0080];
@@ -179,10 +181,10 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 		return (gb->background_enabled ? BIT(0) : 0)
 		     | (gb->sprites_enabled ? BIT(1) : 0)
 		     | (gb->sprite_size == 16 ? BIT(2) : 0)
-		     | (gb->background_tilemap == gb->tilemap[1] ? BIT(3) : 0)
+		     | (gb->background_tilemap == &gb->tilemaps[1] ? BIT(3) : 0)
 		     | (gb->tilemap_signed ? 0 : BIT(4))
 		     | (gb->window_enabled ? BIT(5) : 0)
-		     | (gb->window_tilemap == gb->tilemap[1] ? BIT(6) : 0)
+		     | (gb->window_tilemap == &gb->tilemaps[1] ? BIT(6) : 0)
 		     | (gb->lcd_enabled ? BIT(7) : 0);
 
 	case GAMEBOY_ADDR_STAT:
@@ -213,13 +215,13 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 		return gb->wx + 7;
 
 	case GAMEBOY_ADDR_BGP:
-		return gb->bgp_raw;
+		return gb->bgp[0].raw[0];
 
 	case GAMEBOY_ADDR_OBP0:
-		return gb->obp_raw[0];
+		return gb->obp[0].raw[0];
 
 	case GAMEBOY_ADDR_OBP1:
-		return gb->obp_raw[1];
+		return gb->obp[1].raw[0];
 
 	case GAMEBOY_ADDR_NR10:
 		return gb->sq1.sweep.shift
@@ -645,11 +647,11 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 	case GAMEBOY_ADDR_LCDC:
 		gb->background_enabled = (val & BIT(0));
 		gb->sprites_enabled = (val & BIT(1));
-		gb->sprite_size = (val & BIT(2)) ? 16 : 8;
-		gb->background_tilemap = gb->tilemap[!!(val & BIT(3))];
-		lcd_update_tilemap_cache(gb, !(val & BIT(4)));
+		lcd_update_sprite_mode(gb, val & BIT(2));
+		gb->background_tilemap = &gb->tilemaps[!!(val & BIT(3))];
+		lcd_update_tilemap_mode(gb, !(val & BIT(4)));
 		gb->window_enabled = (val & BIT(5));
-		gb->window_tilemap = gb->tilemap[!!(val & BIT(6))];
+		gb->window_tilemap = &gb->tilemaps[!!(val & BIT(6))];
 		if (val & BIT(7))
 			lcd_enable(gb);
 		else
@@ -698,18 +700,18 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 		break;
 
 	case GAMEBOY_ADDR_BGP:
-		gb->bgp_raw = val;
-		lcd_update_palette(&gb->bgp, val);
+		gb->bgp[0].raw[0] = val;
+		lcd_update_palette_dmg(&gb->bgp[0], val);
 		break;
 
 	case GAMEBOY_ADDR_OBP0:
-		gb->obp_raw[0] = val;
-		lcd_update_palette(&gb->obp[0], val);
+		gb->obp[0].raw[0] = val;
+		lcd_update_palette_dmg(&gb->obp[0], val);
 		break;
 
 	case GAMEBOY_ADDR_OBP1:
-		gb->obp_raw[1] = val;
-		lcd_update_palette(&gb->obp[1], val);
+		gb->obp[1].raw[0] = val;
+		lcd_update_palette_dmg(&gb->obp[1], val);
 		break;
 
 	case GAMEBOY_ADDR_BOOT_SWITCH:
