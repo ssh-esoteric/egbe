@@ -282,6 +282,7 @@ struct gameboy {
 	unsigned int features;
 	enum gameboy_mbc mbc;
 	enum gameboy_system system;
+	bool gbc;
 
 	enum gameboy_cpu_status cpu_status;
 	long cycles;

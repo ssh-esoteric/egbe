@@ -98,8 +98,17 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 	case 0x0000 ... 0x00FF:
 		if (gb->boot_enabled)
 			return gb->boot[addr];
-		; // fallthrough
-	case 0x0100 ... 0x3FFF:
+		if (gb->rom)
+			return gb->rom[0][addr];
+		break;
+	case 0x0200 ... 0x08FF:
+		if (gb->boot_enabled && gb->gbc)
+			return gb->boot[addr];
+		if (gb->rom)
+			return gb->rom[0][addr];
+		break;
+	case 0x0100 ... 0x01FF:
+	case 0x0900 ... 0x3FFF:
 		if (gb->rom)
 			return gb->rom[0][addr];
 		break;
@@ -715,7 +724,7 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 		break;
 
 	case GAMEBOY_ADDR_BOOT_SWITCH:
-		if (val != 0x01) {
+		if (val != 0x01 && val != 0x11) {
 			GBLOG("Bad write to boot ROM switch: %02X", val);
 			gb->cpu_status = GAMEBOY_CPU_CRASHED;
 		} else if (!gb->boot_enabled) {

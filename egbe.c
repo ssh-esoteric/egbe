@@ -202,13 +202,17 @@ int main(int argc, char **argv)
 	}
 	atexit(SDL_Quit);
 
-	struct gameboy *gb = gameboy_alloc(GAMEBOY_SYSTEM_DMG);
+	enum gameboy_system system = GAMEBOY_SYSTEM_DMG;
+	if (getenv("GBC"))
+		system = GAMEBOY_SYSTEM_GBC;
+
+	struct gameboy *gb = gameboy_alloc(system);
 	if (!gb)
 		return 1;
 
 	struct gameboy *alt_gb = NULL;
 	if (getenv("SERIAL"))
-		alt_gb = gameboy_alloc(GAMEBOY_SYSTEM_DMG);
+		alt_gb = gameboy_alloc(system);
 
 	struct view view = {
 		.screen = {
