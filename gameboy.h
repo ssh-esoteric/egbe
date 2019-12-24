@@ -355,7 +355,9 @@ struct gameboy {
 	int screen[144][160];
 	int dbg_background[256][256];
 	int dbg_window[256][256];
+	int dbg_palettes[82][86];
 	int dbg_vram[192][128];
+	int dbg_vram_gbc[192][128];
 
 	struct gameboy_sprite sprites[40];
 	struct gameboy_sprite *sprites_sorted[40];

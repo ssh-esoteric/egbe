@@ -63,6 +63,22 @@ static void render_debug(struct gameboy *gb)
 		}
 	}
 
+	for (int ty = 0; ty < 24; ++ty) {
+		for (int tx = 0; tx < 16; ++tx) {
+			tile = &gb->tiles[1][(16 * ty) + tx];
+
+			for (int dy = 0; dy < 8; ++dy) {
+				for (int dx = 0; dx < 8; ++dx) {
+					int y = (8 * ty) + dy;
+					int x = (8 * tx) + dx;
+					int color = tile->pixels[dy][dx];
+
+					gb->dbg_vram_gbc[y][x] = monochrome.colors[color];
+				}
+			}
+		}
+	}
+
 	for (int ty = 0; ty < 32; ++ty) {
 		for (int tx = 0; tx < 32; ++tx) {
 			cell = &gb->background_tilemap->cells[ty][tx];
@@ -90,6 +106,30 @@ static void render_debug(struct gameboy *gb)
 					int color = cell->tile->pixels[dy][dx];
 
 					gb->dbg_window[y][x] = cell->palette->colors[color];
+				}
+			}
+		}
+	}
+
+	for (int i = 0; i < 8; ++i) {
+		for (int j = 0; j < 4; ++j) {
+			int color;
+
+			color = gb->bgp[i].colors[j];
+			for (int dy = 0; dy < 8; ++dy) {
+				for (int dx = 0; dx < 8; ++dx) {
+					int y = (i * 10) + dy + 2;
+					int x = (j * 10) + dx + 2;
+					gb->dbg_palettes[y][x] = color;
+				}
+			}
+
+			color = gb->obp[i].colors[j];
+			for (int dy = 0; dy < 8; ++dy) {
+				for (int dx = 0; dx < 8; ++dx) {
+					int y = (i * 10) + dy + 2;
+					int x = (j * 10) + dx + 46;
+					gb->dbg_palettes[y][x] = color;
 				}
 			}
 		}
@@ -224,6 +264,15 @@ void lcd_init(struct gameboy *gb)
 
 	gb->lcd_enabled = true;
 	lcd_disable(gb);
+
+	for (int y = 0; y < 82; ++y) {
+		for (int x = 0; x < 86; ++x) {
+			if ((x + y) % 2)
+				gb->dbg_palettes[y][x] = 0x00CCCCCC;
+			else
+				gb->dbg_palettes[y][x] = 0x00DDDDDD;
+		}
+	}
 }
 
 void lcd_sync(struct gameboy *gb)
