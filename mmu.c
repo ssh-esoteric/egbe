@@ -349,6 +349,16 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 		     | (gb->noise.super.enabled ? BIT(3) : 0)
 		     | BITS(4, 6)
 		     | (gb->apu_enabled ? BIT(7) : 0);
+
+	case GAMEBOY_ADDR_VBK:
+		if (gb->gbc)
+			return 0xFE | gb->vram_bank;
+		break;
+
+	case GAMEBOY_ADDR_SVBK:
+		if (gb->gbc)
+			return gb->wram_bank | BITS(3, 7);
+		break;
 	}
 
 	return 0xFF; // "Undefined" read
@@ -750,6 +760,19 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 			      gb->hl);
 			gb->boot_enabled = false;
 		}
+		break;
+
+	case GAMEBOY_ADDR_VBK:
+		if (!gb->gbc)
+			break;
+		gb->vram_bank = val & BIT(0);
+		break;
+
+	case GAMEBOY_ADDR_SVBK:
+		if (!gb->gbc)
+			break;
+		gb->wram_bank = (val & BITS(0, 2)) ?: 1;
+		gb->wramx = gb->wram[gb->wram_bank];
 		break;
 	}
 }
