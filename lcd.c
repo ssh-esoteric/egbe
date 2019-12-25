@@ -21,6 +21,20 @@ void lcd_update_palette_dmg(struct gameboy_palette *p, uint8_t val)
 	p->colors[3] = monochrome.colors[(val & BITS(6, 7)) >> 6];
 }
 
+void lcd_update_palette_gbc(struct gameboy_palette *p, uint8_t index)
+{
+	int tmp = (p->raw[(index << 1) + 1] << 8) | p->raw[index << 1];
+
+	tmp = ((tmp & BITS(0, 4))   << 19) // R
+	    | ((tmp & BITS(5, 9))   << 6)  // G
+	    | ((tmp & BITS(10, 15)) >> 7); // B
+
+	// Roughly convert colors from 5-bit to 8-bit
+	tmp |= ((tmp & 0x00E0E0E0) >> 5);
+
+	p->colors[index] = tmp;
+}
+
 static inline void set_cell_tile_index(struct gameboy *gb,
                                        struct gameboy_background_cell *cell,
                                        uint8_t val)
@@ -391,7 +405,13 @@ void lcd_update_sprite(struct gameboy *gb, uint16_t offset, uint8_t val)
 
 	case 3:
 		s->raw_flags = val;
-		s->palette_index = !!(val & BIT(4));
+		if (gb->gbc) {
+			s->palette_index = (val & BITS(0, 2));
+			s->vram_bank = !!(val & BIT(3));
+			set_sprite_tile_index(gb, s, s->tile_index);
+		} else {
+			s->palette_index = !!(val & BIT(4));
+		}
 		s->palette = &gb->obp[s->palette_index];
 		s->flipx = !!(val & BIT(5));
 		s->flipy = !!(val & BIT(6));
@@ -456,12 +476,14 @@ void lcd_update_tilemap(struct gameboy *gb, uint16_t offset, uint8_t val)
 	cell = &gb->tilemaps[offset >= 0x0400].cells_flat[offset % 0x0400];
 
 	if (gb->vram_bank) {
+		cell->raw_flags = val;
 		cell->palette_index = (val & BITS(0, 2));
 		cell->vram_bank = !!(val & BIT(3));
 		cell->flipx = !!(val & BIT(5));
 		cell->flipy = !!(val & BIT(6));
 		cell->priority = !!(val & BIT(7));
 
+		cell->palette = &gb->bgp[cell->palette_index];
 		set_cell_tile_index(gb, cell, cell->tile_index);
 	} else {
 		set_cell_tile_index(gb, cell, val);

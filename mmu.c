@@ -355,6 +355,30 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 			return 0xFE | gb->vram_bank;
 		break;
 
+	case GAMEBOY_ADDR_BGPI:
+		if (!gb->gbc)
+			break;
+		return (gb->bgp_index & BITS(0, 5))
+		     | BIT(6)
+		     | (gb->bgp_increment ? BIT(7) : 0);
+
+	case GAMEBOY_ADDR_BGPD:
+		if (!gb->gbc)
+			break;
+		return gb->bgp[gb->bgp_index / 8].raw[gb->bgp_index % 8];
+
+	case GAMEBOY_ADDR_OBPI:
+		if (!gb->gbc)
+			break;
+		return (gb->obp_index & BITS(0, 5))
+		     | BIT(6)
+		     | (gb->obp_increment ? BIT(7) : 0);
+
+	case GAMEBOY_ADDR_OBPD:
+		if (!gb->gbc)
+			break;
+		return gb->obp[gb->obp_index / 8].raw[gb->obp_index % 8];
+
 	case GAMEBOY_ADDR_SVBK:
 		if (gb->gbc)
 			return gb->wram_bank | BITS(3, 7);
@@ -766,6 +790,36 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 		if (!gb->gbc)
 			break;
 		gb->vram_bank = val & BIT(0);
+		break;
+
+	case GAMEBOY_ADDR_BGPI:
+		if (!gb->gbc)
+			break;
+		gb->bgp_index = val & BITS(0, 5);
+		gb->bgp_increment = !!(val & BIT(7));
+		break;
+
+	case GAMEBOY_ADDR_BGPD:
+		if (!gb->gbc)
+			break;
+		gb->bgp[gb->bgp_index / 8].raw[gb->bgp_index % 8] = val;
+		lcd_update_palette_gbc(&gb->bgp[gb->bgp_index / 8], gb->bgp_index % 8 / 2);
+		gb->bgp_index = (gb->bgp_index + gb->bgp_increment) & BITS(0, 5);
+		break;
+
+	case GAMEBOY_ADDR_OBPI:
+		if (!gb->gbc)
+			break;
+		gb->obp_index = val & BITS(0, 5);
+		gb->obp_increment = !!(val & BIT(7));
+		break;
+
+	case GAMEBOY_ADDR_OBPD:
+		if (!gb->gbc)
+			break;
+		gb->obp[gb->obp_index / 8].raw[gb->obp_index % 8] = val;
+		lcd_update_palette_gbc(&gb->obp[gb->obp_index / 8], gb->obp_index % 8 / 2);
+		gb->obp_index = (gb->obp_index + gb->obp_increment) & BITS(0, 5);
 		break;
 
 	case GAMEBOY_ADDR_SVBK:

@@ -366,6 +366,11 @@ struct gameboy {
 	struct gameboy_palette bgp[8];
 	struct gameboy_palette obp[8];
 
+	uint8_t bgp_index;
+	bool bgp_increment;
+	uint8_t obp_index;
+	bool obp_increment;
+
 	struct gameboy_callback on_vblank;
 	int screen[144][160];
 	int dbg_background[256][256];
