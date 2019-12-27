@@ -1258,8 +1258,10 @@ void gameboy_tick(struct gameboy *gb)
 {
 	switch (gb->cpu_status) {
 	case GAMEBOY_CPU_CRASHED:
+		break;
+
 	case GAMEBOY_CPU_STOPPED:
-		exit(1); // TODO: tmp
+		tick(gb);
 		break;
 
 	case GAMEBOY_CPU_HALTED:
@@ -1271,6 +1273,22 @@ void gameboy_tick(struct gameboy *gb)
 		break;
 
 	case GAMEBOY_CPU_RUNNING:
+		if (gb->hdma_enabled && gb->hdma_blocks_queued) {
+			for (int i = 0; i < 0x10; ++i) {
+				uint8_t tmp = mmu_read(gb, gb->hdma_src++);
+				mmu_write(gb, gb->hdma_dst++, tmp);
+				if (i % 2)
+					tick(gb);
+			}
+
+			--gb->hdma_blocks_queued;
+			if (!--gb->hdma_blocks_remaining)
+				gb->hdma_enabled = false;
+
+			// During HDMA/GDMA, interrupts are not processed and
+			// program execution is halted
+			break;
+		}
 		process_interrupts(gb);
 		process_opcode(gb, iv(gb));
 		break;

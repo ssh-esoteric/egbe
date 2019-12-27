@@ -316,6 +316,9 @@ void lcd_sync(struct gameboy *gb)
 	case GAMEBOY_LCD_HBLANK:
 		render_scanline(gb);
 
+		if (gb->hdma_enabled && gb->hdma_blocks_remaining && !gb->gdma)
+			gb->hdma_blocks_queued = 1;
+
 		if (gb->stat_on_hblank)
 			irq_flag(gb, GAMEBOY_IRQ_STAT);
 

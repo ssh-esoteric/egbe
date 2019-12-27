@@ -355,6 +355,23 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 			return 0xFE | gb->vram_bank;
 		break;
 
+	case GAMEBOY_ADDR_HDMA1:
+	case GAMEBOY_ADDR_HDMA2:
+	case GAMEBOY_ADDR_HDMA3:
+	case GAMEBOY_ADDR_HDMA4:
+		// TCAGBD: "Always returns FFh when read"
+		break;
+
+	case GAMEBOY_ADDR_HDMA5:
+		if (!gb->gbc)
+			break;
+
+		if (!gb->hdma_enabled)
+			return 0xFF;
+
+		return ((gb->hdma_blocks_remaining - 1) & BITS(0, 6))
+		     | (gb->gdma ? 0 : BIT(7));
+
 	case GAMEBOY_ADDR_BGPI:
 		if (!gb->gbc)
 			break;
@@ -789,7 +806,60 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 	case GAMEBOY_ADDR_VBK:
 		if (!gb->gbc)
 			break;
+		if (gb->hdma_enabled) {
+			GBLOG("Can't update VRAM Bank while in HDMA");
+			break;
+		}
 		gb->vram_bank = val & BIT(0);
+		break;
+
+	case GAMEBOY_ADDR_HDMA1:
+		gb->hdma_src &= 0x00FF;
+		gb->hdma_src |= (val << 8);
+		break;
+	case GAMEBOY_ADDR_HDMA2:
+		gb->hdma_src &= 0xFF00;
+		gb->hdma_src |= (val & 0xF0);
+		break;
+	case GAMEBOY_ADDR_HDMA3:
+		gb->hdma_dst &= 0x00FF;
+		gb->hdma_dst |= ((val & BITS(0, 4)) << 8) | BIT(15);
+		break;
+	case GAMEBOY_ADDR_HDMA4:
+		gb->hdma_dst &= 0xFF00;
+		gb->hdma_dst |= (val & 0xF0);
+		break;
+	case GAMEBOY_ADDR_HDMA5:
+		if (!gb->gbc)
+			break;
+
+		gb->hdma_blocks_queued = 0;
+		gb->hdma_blocks_remaining = (val & BITS(0, 6)) + 1;
+		if (val & BIT(7)) {
+			if (gb->hdma_enabled)
+				GBLOG("Attempted to interrupt HDMA");
+
+			gb->gdma = false;
+			gb->hdma_enabled = true;
+			if (!gb->lcd_enabled || gb->lcd_status == GAMEBOY_LCD_HBLANK)
+				gb->hdma_blocks_queued = 1;
+
+			//GBLOG("Start %d block HDMA: %04X => %04X",
+			//      gb->hdma_blocks_remaining,
+			//      gb->hdma_src, gb->hdma_dst);
+		} else {
+			if (!gb->gdma && gb->hdma_enabled) {
+				gb->hdma_enabled = false;
+				break;
+			}
+
+			gb->gdma = true;
+			gb->hdma_enabled = true;
+			gb->hdma_blocks_queued = gb->hdma_blocks_remaining;
+			//GBLOG("Start %d block GDMA: %04X => %04X",
+			//      gb->hdma_blocks_remaining,
+			//      gb->hdma_src, gb->hdma_dst);
+		}
 		break;
 
 	case GAMEBOY_ADDR_BGPI:

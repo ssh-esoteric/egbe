@@ -363,6 +363,13 @@ struct gameboy {
 	bool stat_on_oam_search;
 	bool stat_on_scanline;
 
+	bool hdma_enabled;
+	bool gdma;
+	uint8_t hdma_blocks_remaining;
+	uint8_t hdma_blocks_queued;
+	uint16_t hdma_src;
+	uint16_t hdma_dst;
+
 	struct gameboy_palette bgp[8];
 	struct gameboy_palette obp[8];
 

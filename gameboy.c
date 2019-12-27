@@ -14,6 +14,7 @@ struct gameboy *gameboy_alloc(enum gameboy_system system)
 
 	gb->system = system;
 	gb->gbc = gb->system >= GAMEBOY_SYSTEM_GBC;
+	gb->gdma = true;
 
 	if (gb->gbc) {
 		gb->wram_banks = 8;
