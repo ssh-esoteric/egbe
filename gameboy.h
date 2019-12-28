@@ -301,6 +301,9 @@ struct gameboy {
 	enum gameboy_cpu_status cpu_status;
 	long cycles;
 
+	bool double_speed;
+	bool double_speed_switch;
+
 	enum gameboy_ime_status ime_status;
 	uint8_t irq_enabled;
 	uint8_t irq_flagged;

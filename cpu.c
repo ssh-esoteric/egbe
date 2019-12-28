@@ -15,9 +15,14 @@ enum {
 
 static void tick(struct gameboy *gb)
 {
-	gb->cycles += 4;
-
-	; // TODO: synchronize CPU cycles to other components (LCD, APU, etc)
+	if (gb->double_speed) {
+		// TODO: Some components like the timer run at double speed
+		// with the CPU, whereas others like the LCD continue running
+		// at normal speed.  This implementation definitely needs work.
+		gb->cycles += 2;
+	} else {
+		gb->cycles += 4;
+	}
 
 	apu_sync(gb);
 	lcd_sync(gb);
@@ -649,7 +654,15 @@ void instr_srl_r(struct gameboy *gb, uint8_t *r)
 
 void instr_stop(struct gameboy *gb)
 {
-	gb->cpu_status = GAMEBOY_CPU_STOPPED;
+	if (gb->gbc && gb->double_speed_switch) {
+		gb->double_speed = !gb->double_speed;
+		gb->double_speed_switch = false;
+		GBLOG("Double Speed: %s", gb->double_speed ? "On" : "Off");
+	} else {
+		// TODO: What's the correct behavior if we try to STOP a GBC
+		//       without the speed switch set?
+		gb->cpu_status = GAMEBOY_CPU_STOPPED;
+	}
 }
 
 void instr_sub_r_aa(struct gameboy *gb, uint8_t *r, uint16_t aa)

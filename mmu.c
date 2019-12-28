@@ -350,6 +350,13 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 		     | BITS(4, 6)
 		     | (gb->apu_enabled ? BIT(7) : 0);
 
+	case GAMEBOY_ADDR_KEY1:
+		if (!gb->gbc)
+			break;
+		return (gb->double_speed_switch ? BIT(0) : 0)
+		     | BITS(1, 6)
+		     | (gb->double_speed ? BIT(7) : 0);
+
 	case GAMEBOY_ADDR_VBK:
 		if (gb->gbc)
 			return 0xFE | gb->vram_bank;
@@ -801,6 +808,10 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 			      gb->hl);
 			gb->boot_enabled = false;
 		}
+		break;
+
+	case GAMEBOY_ADDR_KEY1:
+		gb->double_speed_switch = !!(val & BIT(0));
 		break;
 
 	case GAMEBOY_ADDR_VBK:
