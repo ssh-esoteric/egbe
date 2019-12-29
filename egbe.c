@@ -15,7 +15,9 @@ struct view {
 	struct texture alt_screen;
 	struct texture dbg_background;
 	struct texture dbg_window;
+	struct texture dbg_palettes;
 	struct texture dbg_vram;
+	struct texture dbg_vram_gbc;
 };
 
 struct audio {
@@ -52,7 +54,7 @@ static int view_init(struct view *v)
 		"EGBE",
 		SDL_WINDOWPOS_CENTERED,
 		SDL_WINDOWPOS_CENTERED,
-		520,
+		660,
 		520,
 		SDL_WINDOW_OPENGL | SDL_WINDOW_BORDERLESS
 	);
@@ -77,7 +79,9 @@ static int view_init(struct view *v)
 	    || texture_init(&v->alt_screen, v->renderer)
 	    || texture_init(&v->dbg_background, v->renderer)
 	    || texture_init(&v->dbg_window, v->renderer)
-	    || texture_init(&v->dbg_vram, v->renderer);
+	    || texture_init(&v->dbg_palettes, v->renderer)
+	    || texture_init(&v->dbg_vram, v->renderer)
+	    || texture_init(&v->dbg_vram_gbc, v->renderer);
 }
 
 static void view_free(struct view *v)
@@ -86,7 +90,9 @@ static void view_free(struct view *v)
 	texture_free(&v->alt_screen);
 	texture_free(&v->dbg_background);
 	texture_free(&v->dbg_window);
+	texture_free(&v->dbg_palettes);
 	texture_free(&v->dbg_vram);
+	texture_free(&v->dbg_vram_gbc);
 
 	if (v->renderer)
 		SDL_DestroyRenderer(v->renderer);
@@ -115,7 +121,9 @@ static void on_vblank(struct gameboy *gb, void *context)
 	view_render_texture(v, &v->alt_screen);
 	view_render_texture(v, &v->dbg_background);
 	view_render_texture(v, &v->dbg_window);
+	view_render_texture(v, &v->dbg_palettes);
 	view_render_texture(v, &v->dbg_vram);
+	view_render_texture(v, &v->dbg_vram_gbc);
 
 	SDL_RenderPresent(v->renderer);
 }
@@ -194,34 +202,46 @@ int main(int argc, char **argv)
 	}
 	atexit(SDL_Quit);
 
-	struct gameboy *gb = gameboy_alloc(GAMEBOY_SYSTEM_DMG);
+	enum gameboy_system system = GAMEBOY_SYSTEM_DMG;
+	if (getenv("GBC"))
+		system = GAMEBOY_SYSTEM_GBC;
+
+	struct gameboy *gb = gameboy_alloc(system);
 	if (!gb)
 		return 1;
 
 	struct gameboy *alt_gb = NULL;
 	if (getenv("SERIAL"))
-		alt_gb = gameboy_alloc(GAMEBOY_SYSTEM_DMG);
+		alt_gb = gameboy_alloc(system);
 
 	struct view view = {
 		.screen = {
 			.pixels = gb->screen,
-			.rect = { .x = 180, .y = 264, .w = 160, .h = 144, },
+			.rect = { .x = 232, .y = 264, .w = 160, .h = 144, },
 		},
 		.alt_screen = {
 			.pixels = alt_gb ? alt_gb->screen : NULL,
-			.rect = { .x = 348, .y = 264, .w = 160, .h = 144, },
+			.rect = { .x = 396, .y = 264, .w = 160, .h = 144, },
 		},
 		.dbg_background = {
 			.pixels = gb->dbg_background,
-			.rect = { .x =   4, .y =   4, .w = 256, .h = 256, },
+			.rect = { .x = 136, .y =   4, .w = 256, .h = 256, },
 		},
 		.dbg_window = {
 			.pixels = gb->dbg_window,
-			.rect = { .x = 264, .y =   4, .w = 256, .h = 256, },
+			.rect = { .x = 396, .y =   4, .w = 256, .h = 256, },
+		},
+		.dbg_palettes = {
+			.pixels = gb->dbg_palettes,
+			.rect = { .x = 136, .y = 264, .w =  86, .h = 82, },
 		},
 		.dbg_vram = {
 			.pixels = gb->dbg_vram,
-			.rect = { .x =   4, .y = 264, .w = 128, .h = 192, },
+			.rect = { .x =   4, .y =   4, .w = 128, .h = 192, },
+		},
+		.dbg_vram_gbc = {
+			.pixels = gb->dbg_vram_gbc,
+			.rect = { .x =   4, .y = 200, .w = 128, .h = 192, },
 		},
 	};
 

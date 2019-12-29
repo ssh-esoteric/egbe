@@ -7,6 +7,8 @@
 
 struct gameboy;
 struct gameboy_callback;
+struct gameboy_palette;
+struct gameboy_tile;
 
 enum gameboy_addr {
 	GAMEBOY_ADDR_NINTENDO_LOGO     = 0x0104,
@@ -73,6 +75,20 @@ enum gameboy_addr {
 	GAMEBOY_ADDR_WX   = 0xFF4B,
 
 	GAMEBOY_ADDR_BOOT_SWITCH = 0xFF50,
+
+	GAMEBOY_ADDR_KEY1  = 0xFF4D,
+	GAMEBOY_ADDR_VBK   = 0xFF4F,
+	GAMEBOY_ADDR_HDMA1 = 0xFF51,
+	GAMEBOY_ADDR_HDMA2 = 0xFF52,
+	GAMEBOY_ADDR_HDMA3 = 0xFF53,
+	GAMEBOY_ADDR_HDMA4 = 0xFF54,
+	GAMEBOY_ADDR_HDMA5 = 0xFF55,
+	GAMEBOY_ADDR_RP    = 0xFF56,
+	GAMEBOY_ADDR_BGPI  = 0xFF68,
+	GAMEBOY_ADDR_BGPD  = 0xFF69,
+	GAMEBOY_ADDR_OBPI  = 0xFF6A,
+	GAMEBOY_ADDR_OBPD  = 0xFF6B,
+	GAMEBOY_ADDR_SVBK  = 0xFF70,
 };
 
 enum gameboy_cpu_status {
@@ -232,15 +248,61 @@ struct gameboy_joypad {
 
 struct gameboy_palette {
 	int colors[4];
+
+	uint8_t raw[8];
+};
+
+struct gameboy_sprite {
+	struct gameboy_palette *palette;
+	struct gameboy_tile *tile; // First tile of two in 8x16 mode
+	uint8_t palette_index; // DMG: 0-1; GBC: 0-7
+	uint8_t tile_index;
+	uint8_t vram_bank;
+
+	uint8_t raw_flags;
+	uint8_t x;
+	uint8_t y;
+	bool flipx;
+	bool flipy;
+	bool priority;
+};
+
+struct gameboy_tile {
+	uint8_t pixels[8][8]; // 8x8 2-bit color codes
+	uint8_t raw[16];
+};
+
+struct gameboy_background_cell {
+	struct gameboy_palette *palette;
+	struct gameboy_tile *tile;
+	uint8_t palette_index;
+	uint8_t tile_index;
+	uint8_t vram_bank;
+
+	uint8_t raw_flags;
+	bool flipx;
+	bool flipy;
+	bool priority;
+};
+
+struct gameboy_background_table {
+	union {
+		struct gameboy_background_cell cells[32][32];
+		struct gameboy_background_cell cells_flat[1024];
+	};
 };
 
 struct gameboy {
 	unsigned int features;
 	enum gameboy_mbc mbc;
 	enum gameboy_system system;
+	bool gbc;
 
 	enum gameboy_cpu_status cpu_status;
 	long cycles;
+
+	bool double_speed;
+	bool double_speed_switch;
 
 	enum gameboy_ime_status ime_status;
 	uint8_t irq_enabled;
@@ -295,8 +357,6 @@ struct gameboy {
 	uint8_t wy;
 	uint8_t wx;
 	uint8_t dma;
-	uint8_t bgp_raw;
-	uint8_t obp_raw[2];
 	uint8_t sprite_size;
 	bool sprites_enabled;
 	bool background_enabled;
@@ -306,37 +366,38 @@ struct gameboy {
 	bool stat_on_oam_search;
 	bool stat_on_scanline;
 
-	struct gameboy_palette bgp;
-	struct gameboy_palette obp[2];
+	bool hdma_enabled;
+	bool gdma;
+	uint8_t hdma_blocks_remaining;
+	uint8_t hdma_blocks_queued;
+	uint16_t hdma_src;
+	uint16_t hdma_dst;
+
+	struct gameboy_palette bgp[8];
+	struct gameboy_palette obp[8];
+
+	uint8_t bgp_index;
+	bool bgp_increment;
+	uint8_t obp_index;
+	bool obp_increment;
 
 	struct gameboy_callback on_vblank;
 	int screen[144][160];
 	int dbg_background[256][256];
 	int dbg_window[256][256];
+	int dbg_palettes[82][86];
 	int dbg_vram[192][128];
+	int dbg_vram_gbc[192][128];
 
-	struct sprite {
-		uint8_t y;
-		uint8_t x;
-		uint8_t index;
-		bool priority;
-		bool flipy;
-		bool flipx;
-		uint8_t palette_number; // DMG: 0-1; GBC: 0-7
-		struct gameboy_palette *palette;
-	} sprites[40];
-	struct sprite *sprites_sorted[40];
+	struct gameboy_sprite sprites[40];
+	struct gameboy_sprite *sprites_sorted[40];
 	bool sprites_unsorted;
 
-	struct tile {
-		uint8_t pixels[8][8];
-		uint8_t raw[16];
-	} tiles[384];
-
-	struct tile *tilemap[2][1024];
-	uint8_t tilemap_raw[2 * 1024];
-	struct tile **background_tilemap;
-	struct tile **window_tilemap;
+	struct gameboy_tile tiles[2][384];
+	struct gameboy_background_table tilemaps[2];
+	struct gameboy_background_table *background_tilemap;
+	struct gameboy_background_table *window_tilemap;
+	uint8_t vram_bank;
 	bool tilemap_signed;
 
 	bool boot_enabled;

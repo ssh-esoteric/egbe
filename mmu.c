@@ -98,8 +98,17 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 	case 0x0000 ... 0x00FF:
 		if (gb->boot_enabled)
 			return gb->boot[addr];
-		; // fallthrough
-	case 0x0100 ... 0x3FFF:
+		if (gb->rom)
+			return gb->rom[0][addr];
+		break;
+	case 0x0200 ... 0x08FF:
+		if (gb->boot_enabled && gb->gbc)
+			return gb->boot[addr];
+		if (gb->rom)
+			return gb->rom[0][addr];
+		break;
+	case 0x0100 ... 0x01FF:
+	case 0x0900 ... 0x3FFF:
 		if (gb->rom)
 			return gb->rom[0][addr];
 		break;
@@ -111,11 +120,11 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 
 	case 0x8000 ... 0x97FF:
 		if (is_vram_accessible(gb))
-			return gb->tiles[(addr % 0x2000) / 16].raw[addr % 16];
+			return lcd_read_tile(gb, addr % 0x2000);
 		break;
 	case 0x9800 ... 0x9FFF:
 		if (is_vram_accessible(gb))
-			return gb->tilemap_raw[addr % 0x0800];
+			return lcd_read_tilemap(gb, addr % 0x0800);
 		break;
 
 	case 0xA000 ... 0xBFFF:
@@ -134,7 +143,9 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 		break;
 
 	case 0xFE00 ... 0xFE9F:
-		break; // TODO: OAM
+		if (is_oam_accessible(gb))
+			return lcd_read_sprite(gb, addr % 0x0100);
+		break;
 
 	case 0xFF80 ... 0xFFFE:
 		return gb->hram[addr % 0x0080];
@@ -179,10 +190,10 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 		return (gb->background_enabled ? BIT(0) : 0)
 		     | (gb->sprites_enabled ? BIT(1) : 0)
 		     | (gb->sprite_size == 16 ? BIT(2) : 0)
-		     | (gb->background_tilemap == gb->tilemap[1] ? BIT(3) : 0)
+		     | (gb->background_tilemap == &gb->tilemaps[1] ? BIT(3) : 0)
 		     | (gb->tilemap_signed ? 0 : BIT(4))
 		     | (gb->window_enabled ? BIT(5) : 0)
-		     | (gb->window_tilemap == gb->tilemap[1] ? BIT(6) : 0)
+		     | (gb->window_tilemap == &gb->tilemaps[1] ? BIT(6) : 0)
 		     | (gb->lcd_enabled ? BIT(7) : 0);
 
 	case GAMEBOY_ADDR_STAT:
@@ -213,13 +224,13 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 		return gb->wx + 7;
 
 	case GAMEBOY_ADDR_BGP:
-		return gb->bgp_raw;
+		return gb->bgp[0].raw[0];
 
 	case GAMEBOY_ADDR_OBP0:
-		return gb->obp_raw[0];
+		return gb->obp[0].raw[0];
 
 	case GAMEBOY_ADDR_OBP1:
-		return gb->obp_raw[1];
+		return gb->obp[1].raw[0];
 
 	case GAMEBOY_ADDR_NR10:
 		return gb->sq1.sweep.shift
@@ -338,6 +349,64 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 		     | (gb->noise.super.enabled ? BIT(3) : 0)
 		     | BITS(4, 6)
 		     | (gb->apu_enabled ? BIT(7) : 0);
+
+	case GAMEBOY_ADDR_KEY1:
+		if (!gb->gbc)
+			break;
+		return (gb->double_speed_switch ? BIT(0) : 0)
+		     | BITS(1, 6)
+		     | (gb->double_speed ? BIT(7) : 0);
+
+	case GAMEBOY_ADDR_VBK:
+		if (gb->gbc)
+			return 0xFE | gb->vram_bank;
+		break;
+
+	case GAMEBOY_ADDR_HDMA1:
+	case GAMEBOY_ADDR_HDMA2:
+	case GAMEBOY_ADDR_HDMA3:
+	case GAMEBOY_ADDR_HDMA4:
+		// TCAGBD: "Always returns FFh when read"
+		break;
+
+	case GAMEBOY_ADDR_HDMA5:
+		if (!gb->gbc)
+			break;
+
+		if (!gb->hdma_enabled)
+			return 0xFF;
+
+		return ((gb->hdma_blocks_remaining - 1) & BITS(0, 6))
+		     | (gb->gdma ? 0 : BIT(7));
+
+	case GAMEBOY_ADDR_BGPI:
+		if (!gb->gbc)
+			break;
+		return (gb->bgp_index & BITS(0, 5))
+		     | BIT(6)
+		     | (gb->bgp_increment ? BIT(7) : 0);
+
+	case GAMEBOY_ADDR_BGPD:
+		if (!gb->gbc)
+			break;
+		return gb->bgp[gb->bgp_index / 8].raw[gb->bgp_index % 8];
+
+	case GAMEBOY_ADDR_OBPI:
+		if (!gb->gbc)
+			break;
+		return (gb->obp_index & BITS(0, 5))
+		     | BIT(6)
+		     | (gb->obp_increment ? BIT(7) : 0);
+
+	case GAMEBOY_ADDR_OBPD:
+		if (!gb->gbc)
+			break;
+		return gb->obp[gb->obp_index / 8].raw[gb->obp_index % 8];
+
+	case GAMEBOY_ADDR_SVBK:
+		if (gb->gbc)
+			return gb->wram_bank | BITS(3, 7);
+		break;
 	}
 
 	return 0xFF; // "Undefined" read
@@ -645,11 +714,11 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 	case GAMEBOY_ADDR_LCDC:
 		gb->background_enabled = (val & BIT(0));
 		gb->sprites_enabled = (val & BIT(1));
-		gb->sprite_size = (val & BIT(2)) ? 16 : 8;
-		gb->background_tilemap = gb->tilemap[!!(val & BIT(3))];
-		lcd_update_tilemap_cache(gb, !(val & BIT(4)));
+		lcd_update_sprite_mode(gb, val & BIT(2));
+		gb->background_tilemap = &gb->tilemaps[!!(val & BIT(3))];
+		lcd_update_tilemap_mode(gb, !(val & BIT(4)));
 		gb->window_enabled = (val & BIT(5));
-		gb->window_tilemap = gb->tilemap[!!(val & BIT(6))];
+		gb->window_tilemap = &gb->tilemaps[!!(val & BIT(6))];
 		if (val & BIT(7))
 			lcd_enable(gb);
 		else
@@ -698,22 +767,22 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 		break;
 
 	case GAMEBOY_ADDR_BGP:
-		gb->bgp_raw = val;
-		lcd_update_palette(&gb->bgp, val);
+		gb->bgp[0].raw[0] = val;
+		lcd_update_palette_dmg(&gb->bgp[0], val);
 		break;
 
 	case GAMEBOY_ADDR_OBP0:
-		gb->obp_raw[0] = val;
-		lcd_update_palette(&gb->obp[0], val);
+		gb->obp[0].raw[0] = val;
+		lcd_update_palette_dmg(&gb->obp[0], val);
 		break;
 
 	case GAMEBOY_ADDR_OBP1:
-		gb->obp_raw[1] = val;
-		lcd_update_palette(&gb->obp[1], val);
+		gb->obp[1].raw[0] = val;
+		lcd_update_palette_dmg(&gb->obp[1], val);
 		break;
 
 	case GAMEBOY_ADDR_BOOT_SWITCH:
-		if (val != 0x01) {
+		if (val != 0x01 && val != 0x11) {
 			GBLOG("Bad write to boot ROM switch: %02X", val);
 			gb->cpu_status = GAMEBOY_CPU_CRASHED;
 		} else if (!gb->boot_enabled) {
@@ -739,6 +808,106 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 			      gb->hl);
 			gb->boot_enabled = false;
 		}
+		break;
+
+	case GAMEBOY_ADDR_KEY1:
+		gb->double_speed_switch = !!(val & BIT(0));
+		break;
+
+	case GAMEBOY_ADDR_VBK:
+		if (!gb->gbc)
+			break;
+		if (gb->hdma_enabled) {
+			GBLOG("Can't update VRAM Bank while in HDMA");
+			break;
+		}
+		gb->vram_bank = val & BIT(0);
+		break;
+
+	case GAMEBOY_ADDR_HDMA1:
+		gb->hdma_src &= 0x00FF;
+		gb->hdma_src |= (val << 8);
+		break;
+	case GAMEBOY_ADDR_HDMA2:
+		gb->hdma_src &= 0xFF00;
+		gb->hdma_src |= (val & 0xF0);
+		break;
+	case GAMEBOY_ADDR_HDMA3:
+		gb->hdma_dst &= 0x00FF;
+		gb->hdma_dst |= ((val & BITS(0, 4)) << 8) | BIT(15);
+		break;
+	case GAMEBOY_ADDR_HDMA4:
+		gb->hdma_dst &= 0xFF00;
+		gb->hdma_dst |= (val & 0xF0);
+		break;
+	case GAMEBOY_ADDR_HDMA5:
+		if (!gb->gbc)
+			break;
+
+		gb->hdma_blocks_queued = 0;
+		gb->hdma_blocks_remaining = (val & BITS(0, 6)) + 1;
+		if (val & BIT(7)) {
+			if (gb->hdma_enabled)
+				GBLOG("Attempted to interrupt HDMA");
+
+			gb->gdma = false;
+			gb->hdma_enabled = true;
+			if (!gb->lcd_enabled || gb->lcd_status == GAMEBOY_LCD_HBLANK)
+				gb->hdma_blocks_queued = 1;
+
+			//GBLOG("Start %d block HDMA: %04X => %04X",
+			//      gb->hdma_blocks_remaining,
+			//      gb->hdma_src, gb->hdma_dst);
+		} else {
+			if (!gb->gdma && gb->hdma_enabled) {
+				gb->hdma_enabled = false;
+				break;
+			}
+
+			gb->gdma = true;
+			gb->hdma_enabled = true;
+			gb->hdma_blocks_queued = gb->hdma_blocks_remaining;
+			//GBLOG("Start %d block GDMA: %04X => %04X",
+			//      gb->hdma_blocks_remaining,
+			//      gb->hdma_src, gb->hdma_dst);
+		}
+		break;
+
+	case GAMEBOY_ADDR_BGPI:
+		if (!gb->gbc)
+			break;
+		gb->bgp_index = val & BITS(0, 5);
+		gb->bgp_increment = !!(val & BIT(7));
+		break;
+
+	case GAMEBOY_ADDR_BGPD:
+		if (!gb->gbc)
+			break;
+		gb->bgp[gb->bgp_index / 8].raw[gb->bgp_index % 8] = val;
+		lcd_update_palette_gbc(&gb->bgp[gb->bgp_index / 8], gb->bgp_index % 8 / 2);
+		gb->bgp_index = (gb->bgp_index + gb->bgp_increment) & BITS(0, 5);
+		break;
+
+	case GAMEBOY_ADDR_OBPI:
+		if (!gb->gbc)
+			break;
+		gb->obp_index = val & BITS(0, 5);
+		gb->obp_increment = !!(val & BIT(7));
+		break;
+
+	case GAMEBOY_ADDR_OBPD:
+		if (!gb->gbc)
+			break;
+		gb->obp[gb->obp_index / 8].raw[gb->obp_index % 8] = val;
+		lcd_update_palette_gbc(&gb->obp[gb->obp_index / 8], gb->obp_index % 8 / 2);
+		gb->obp_index = (gb->obp_index + gb->obp_increment) & BITS(0, 5);
+		break;
+
+	case GAMEBOY_ADDR_SVBK:
+		if (!gb->gbc)
+			break;
+		gb->wram_bank = (val & BITS(0, 2)) ?: 1;
+		gb->wramx = gb->wram[gb->wram_bank];
 		break;
 	}
 }
