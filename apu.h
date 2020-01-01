@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #ifndef EGBE_APU_H
 #define EGBE_APU_H
 

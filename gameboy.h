@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #ifndef EGBE_GAMEBOY_H
 #define EGBE_GAMEBOY_H
 

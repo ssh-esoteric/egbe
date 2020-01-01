@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #ifndef EGBE_TIMER_H
 #define EGBE_TIMER_H
 

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 #include "cpu.h"
 #include "timer.h"
 #include "common.h"
