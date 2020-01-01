@@ -249,8 +249,7 @@ static void enter_vblank(struct gameboy *gb)
 	if (gb->stat_on_vblank)
 		irq_flag(gb, GAMEBOY_IRQ_STAT);
 
-	if (gb->on_vblank.callback)
-		gb->on_vblank.callback(gb, gb->on_vblank.context);
+	gb_callback(gb, &gb->on_vblank);
 }
 
 void lcd_init(struct gameboy *gb)

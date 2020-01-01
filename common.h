@@ -13,4 +13,6 @@
 	fprintf(stderr, "%s (%s +%d): " msg "\n", \
 	        __func__, __FILE__, __LINE__, ##__VA_ARGS__)
 
+void gb_callback(struct gameboy *gb, struct gameboy_callback *cb);
+
 #endif

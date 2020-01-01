@@ -181,10 +181,7 @@ void apu_sync(struct gameboy *gb)
 		gb->apu_sample[gb->apu_index++] = right * gb->so2_volume / 256;
 
 		if (gb->apu_index >= MAX_APU_SAMPLES(gb)) {
-			struct gameboy_callback *apu_cb = &gb->on_apu_buffer_filled;
-
-			if (apu_cb->callback)
-				apu_cb->callback(gb, apu_cb->context);
+			gb_callback(gb, &gb->on_apu_buffer_filled);
 
 			gb->apu_index = 0;
 		}

@@ -508,7 +508,7 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 
 		if (!gb->is_serial_pending && gb->is_serial_internal && (val & BIT(7))) {
 			if (gb->on_serial_start.callback)
-				gb->on_serial_start.callback(gb, gb->on_serial_start.context);
+				gb_callback(gb, &gb->on_serial_start);
 			else
 				// Disconnected serial cables still "send" this
 				gameboy_start_serial(gb, 0xFF);

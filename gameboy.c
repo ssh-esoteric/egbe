@@ -4,6 +4,12 @@
 #include "mmu.h"
 #include "common.h"
 
+void gb_callback(struct gameboy *gb, struct gameboy_callback *cb)
+{
+	if (cb->callback)
+		cb->callback(gb, cb->context);
+}
+
 struct gameboy *gameboy_alloc(enum gameboy_system system)
 {
 	struct gameboy *gb = calloc(1, sizeof(*gb));
