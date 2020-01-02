@@ -2,8 +2,6 @@
 #include "apu.h"
 #include "common.h"
 
-#define MAX_APU_SAMPLES(gb) (sizeof(gb->apu_sample) / sizeof(gb->apu_sample[0]))
-
 uint8_t duty_waves[4][8] = {
 	{ 0, 0, 0, 0, 0, 0, 0, 1, },
 	{ 1, 0, 0, 0, 0, 0, 0, 1, },
@@ -142,46 +140,41 @@ void apu_sync(struct gameboy *gb)
 	}
 
 	if (gb->cycles >= gb->next_apu_sample) {
-		gb->next_apu_sample += 95; // TODO: 44100 Hz =~ 95.1
+		// TODO: Make the sample rate configurable
+		gb->next_apu_sample += (4194304.0 / 48000.0);
 
-		float left = 0;
-		float right = 0;
+		uint8_t sq1 = gb->sq1.envelope.volume
+		            * duty_waves[gb->sq1.duty][gb->sq1.duty_index]
+		            * gb->sq1.super.dac;
 
-		if (!gb->sq1.super.muted &&
-		    gb->sq1.super.dac &&
-		    duty_waves[gb->sq1.duty][gb->sq1.duty_index]) {
-			float sample = gb->sq1.envelope.volume;
-			left += (gb->sq1.super.output_left ? sample : 0);
-			right += (gb->sq1.super.output_right ? sample : 0);
-		}
+		uint8_t sq2 = gb->sq2.envelope.volume
+		            * duty_waves[gb->sq2.duty][gb->sq2.duty_index]
+		            * gb->sq2.super.dac;
 
-		if (!gb->sq2.super.muted &&
-		    gb->sq2.super.dac &&
-		    duty_waves[gb->sq2.duty][gb->sq2.duty_index]) {
-			float sample = gb->sq2.envelope.volume;
-			left += (gb->sq2.super.output_left ? sample : 0);
-			right += (gb->sq2.super.output_right ? sample : 0);
-		}
+		uint8_t wave = (gb->wave.samples[gb->wave.index] >> gb->wave.volume_shift)
+		             * gb->wave.super.dac;
 
-		if (!gb->wave.super.muted &&
-		    gb->wave.super.dac) {
-			float sample = (gb->wave.samples[gb->wave.index] >> gb->wave.volume_shift);
-			left += (gb->wave.super.output_left ? sample : 0);
-			right += (gb->wave.super.output_right ? sample : 0);
-		}
+		uint8_t noise = gb->noise.envelope.volume
+		              * !(gb->noise.lfsr & BIT(0))
+		              * gb->noise.super.dac;
 
-		if (!gb->noise.super.muted &&
-		    gb->noise.super.dac &&
-		    !(gb->noise.lfsr & BIT(0))) {
-			float sample = gb->noise.envelope.volume;
-			left += (gb->noise.super.output_left ? sample : 0);
-			right += (gb->noise.super.output_right ? sample : 0);
-		}
+		struct gameboy_audio_sample
+			*left  = &gb->apu_samples[gb->apu_index][0],
+			*right = &gb->apu_samples[gb->apu_index][1];
 
-		gb->apu_sample[gb->apu_index++] = left  * gb->so1_volume / 256;
-		gb->apu_sample[gb->apu_index++] = right * gb->so2_volume / 256;
+		left->sq1 = (sq1 * gb->sq1.super.output_left);
+		left->sq2 = (sq2 * gb->sq2.super.output_left);
+		left->wave = (wave * gb->wave.super.output_left);
+		left->noise = (noise * gb->noise.super.output_left);
+		left->volume = gb->so1_volume;
 
-		if (gb->apu_index >= MAX_APU_SAMPLES(gb)) {
+		right->sq1 = (sq1 * gb->sq1.super.output_right);
+		right->sq2 = (sq2 * gb->sq2.super.output_right);
+		right->wave = (wave * gb->wave.super.output_right);
+		right->noise = (noise * gb->noise.super.output_right);
+		right->volume = gb->so2_volume;
+
+		if (++gb->apu_index >= MAX_APU_SAMPLES) {
 			gb_callback(gb, &gb->on_apu_buffer_filled);
 
 			gb->apu_index = 0;

@@ -6,7 +6,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// TODO: Temporary; 800 samples at 48000Hz roughly matches the 60 FPS LCD
+#define MAX_APU_SAMPLES 800
+
 struct gameboy;
+struct gameboy_audio_sample;
 struct gameboy_callback;
 struct gameboy_palette;
 struct gameboy_tile;
@@ -184,7 +188,7 @@ struct apu_sweep_module {
 };
 
 struct apu_channel {
-	bool muted; // Emulator-only flag to supress channel output
+	bool muted; // Emulator-only flag to suppress channel output
 	bool enabled;
 	bool dac;
 
@@ -228,6 +232,15 @@ struct apu_noise_channel {
 
 	struct apu_envelope_module envelope;
 	struct apu_length_module length;
+};
+
+struct gameboy_audio_sample {
+	uint8_t sq1;
+	uint8_t sq2;
+	uint8_t wave;
+	uint8_t noise;
+
+	uint8_t volume;
 };
 
 struct gameboy_callback {
@@ -335,10 +348,9 @@ struct gameboy {
 	bool so1_vin;
 	bool so2_vin;
 
-	// TODO: The APU currently assumes 2 float channels at 44100 Hz
-	long next_apu_sample;
+	double next_apu_sample;
+	struct gameboy_audio_sample apu_samples[MAX_APU_SAMPLES][2]; // L, R
 	size_t apu_index;
-	float apu_sample[2048];
 	struct gameboy_callback on_apu_buffer_filled;
 
 	struct apu_square_channel sq1;

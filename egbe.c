@@ -134,8 +134,8 @@ static int audio_init(struct audio *audio)
 	int samples = 4096;
 	int channels = 2;
 	struct SDL_AudioSpec want = {
-		.freq = 44100,
-		.format = AUDIO_F32,
+		.freq = 48000,
+		.format = AUDIO_S32,
 		.channels = channels,
 		.samples = samples * channels,
 		// .callback = NULL,
@@ -168,7 +168,29 @@ static void queue_audio(struct gameboy *gb, void *context)
 {
 	struct audio *audio = context;
 
-	SDL_QueueAudio(audio->device_id, gb->apu_sample, sizeof(float)*gb->apu_index);
+	int buf[MAX_APU_SAMPLES][2];
+
+	for (size_t i = 0; i < gb->apu_index; ++i) {
+		struct gameboy_audio_sample *left = &gb->apu_samples[i][0];
+		struct gameboy_audio_sample *right = &gb->apu_samples[i][1];
+
+		buf[i][0] = (left->sq1   * !gb->sq1.super.muted)
+			  + (left->sq2   * !gb->sq2.super.muted)
+			  + (left->wave  * !gb->wave.super.muted)
+			  + (left->noise * !gb->noise.super.muted);
+		buf[i][0] *= left->volume;
+
+		buf[i][1] = (right->sq1   * !gb->sq1.super.muted)
+			  + (right->sq2   * !gb->sq2.super.muted)
+			  + (right->wave  * !gb->wave.super.muted)
+			  + (right->noise * !gb->noise.super.muted);
+		buf[i][1] *= right->volume;
+
+		buf[i][0] <<= 21;
+		buf[i][1] <<= 21;
+	}
+
+	SDL_QueueAudio(audio->device_id, buf, gb->apu_index * sizeof(int) * 2);
 }
 
 static void toggle_channel(struct apu_channel *super, char *name)
