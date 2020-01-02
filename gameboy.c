@@ -33,6 +33,7 @@ struct gameboy *gameboy_alloc(enum gameboy_system system)
 	gb->wram = malloc(gb->wram_size);
 	if (!gb->wram) {
 		GBLOG("Failed to allocate WRAM: %m");
+		gameboy_free(gb);
 		return NULL;
 	}
 	gb->wram_bank = 1;
