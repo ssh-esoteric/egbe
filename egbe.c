@@ -316,11 +316,10 @@ int main(int argc, char **argv)
 			gameboy_load_sram(alt_gb, argv[3]);
 	}
 
-	// TODO: Temporary until the audio doesn't sound terrible
-	gb->sq1.super.muted = true;
-	gb->sq2.super.muted = true;
-	gb->wave.super.muted = true;
-	gb->noise.super.muted = true;
+	// gb->sq1.super.muted = true;
+	// gb->sq2.super.muted = true;
+	// gb->wave.super.muted = true;
+	// gb->noise.super.muted = true;
 	gameboy_restart(gb);
 
 	if (alt_gb) {

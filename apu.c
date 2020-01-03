@@ -147,18 +147,22 @@ void apu_sync(struct gameboy *gb)
 
 		uint8_t sq1 = gb->sq1.envelope.volume
 		            * duty_waves[gb->sq1.duty][gb->sq1.duty_index]
-		            * gb->sq1.super.dac;
+		            * gb->sq1.super.dac
+		            * gb->sq1.super.enabled;
 
 		uint8_t sq2 = gb->sq2.envelope.volume
 		            * duty_waves[gb->sq2.duty][gb->sq2.duty_index]
-		            * gb->sq2.super.dac;
+		            * gb->sq2.super.dac
+		            * gb->sq2.super.enabled;
 
 		uint8_t wave = (gb->wave.samples[gb->wave.index] >> gb->wave.volume_shift)
-		             * gb->wave.super.dac;
+		             * gb->wave.super.dac
+		             * gb->wave.super.enabled;
 
 		uint8_t noise = gb->noise.envelope.volume
 		              * !(gb->noise.lfsr & BIT(0))
-		              * gb->noise.super.dac;
+		              * gb->noise.super.dac
+		              * gb->noise.super.enabled;
 
 		struct gameboy_audio_sample
 			*left  = &gb->apu_samples[gb->apu_index][0],

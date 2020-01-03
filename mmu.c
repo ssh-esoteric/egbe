@@ -669,6 +669,9 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 		gb->noise.lfsr_mask = (val & BIT(3)) ? 0x4040 : 0x4000;
 		gb->noise.shift = (val & BITS(4, 7)) >> 4;
 
+		if (gb->noise.shift >= 14)
+			GBLOG("Invalid LFSR shift: %d", gb->noise.shift);
+
 		gb->noise.super.period = ((gb->noise.divisor * 16) ?: 8) << (gb->noise.shift);
 		break;
 
