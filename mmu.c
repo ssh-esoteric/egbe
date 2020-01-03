@@ -563,14 +563,14 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 		break;
 
 	case GAMEBOY_ADDR_NR13:
-		gb->sq1.super.frequency &= ~0xFF;
+		gb->sq1.super.frequency &= BITS(8, 10);
 		gb->sq1.super.frequency |= val;
 
 		gb->sq1.super.period = 4 * (2048 - gb->sq1.super.frequency);
 		break;
 
 	case GAMEBOY_ADDR_NR14:
-		gb->sq1.super.frequency &= ~BITS(8, 10);
+		gb->sq1.super.frequency &= 0xFF;
 		gb->sq1.super.frequency |= ((val & BITS(0, 2)) << 8);
 
 		gb->sq1.super.period = 4 * (2048 - gb->sq1.super.frequency);
@@ -596,14 +596,14 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 		break;
 
 	case GAMEBOY_ADDR_NR23:
-		gb->sq2.super.frequency &= ~0xFF;
+		gb->sq2.super.frequency &= BITS(8, 10);
 		gb->sq2.super.frequency |= val;
 
 		gb->sq2.super.period = 4 * (2048 - gb->sq2.super.frequency);
 		break;
 
 	case GAMEBOY_ADDR_NR24:
-		gb->sq2.super.frequency &= ~BITS(8, 10);
+		gb->sq2.super.frequency &= 0xFF;
 		gb->sq2.super.frequency |= ((val & BITS(0, 2)) << 8);
 
 		gb->sq2.super.period = 4 * (2048 - gb->sq2.super.frequency);
@@ -633,14 +633,14 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 		break;
 
 	case GAMEBOY_ADDR_NR33:
-		gb->wave.super.frequency &= 0xFF;
+		gb->wave.super.frequency &= BITS(8, 10);
 		gb->wave.super.frequency |= val;
 
 		gb->wave.super.period = 2 * (2048 - gb->wave.super.frequency);
 		break;
 
 	case GAMEBOY_ADDR_NR34:
-		gb->wave.super.frequency &= ~BITS(8, 10);
+		gb->wave.super.frequency &= 0xFF;
 		gb->wave.super.frequency |= ((val & BITS(0, 2)) << 8);
 
 		gb->wave.super.period = 2 * (2048 - gb->wave.super.frequency);
@@ -665,11 +665,11 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 		break;
 
 	case GAMEBOY_ADDR_NR43:
-		gb->noise.divisor = (val & BITS(0, 3));
+		gb->noise.divisor = (val & BITS(0, 2));
 		gb->noise.lfsr_mask = (val & BIT(3)) ? 0x4040 : 0x4000;
 		gb->noise.shift = (val & BITS(4, 7)) >> 4;
 
-		gb->noise.super.period = ((gb->noise.divisor * 16) ?: 8) << (gb->noise.shift + 1);
+		gb->noise.super.period = ((gb->noise.divisor * 16) ?: 8) << (gb->noise.shift);
 		break;
 
 	case GAMEBOY_ADDR_NR44:

@@ -19,6 +19,7 @@ void apu_init(struct gameboy *gb)
 	gb->wave.length.clocks_max = 256;
 	gb->noise.length.clocks_max = 64;
 
+	gb->apu_enabled = true;
 	apu_disable(gb);
 	apu_enable(gb);
 }
@@ -82,6 +83,7 @@ static void clock_sweep(struct apu_sweep_module *sweep, struct apu_channel *c)
 
 	sweep->shadow = tmp;
 	c->frequency = tmp;
+	c->period = 4 * (2048 - c->frequency);
 }
 
 void apu_sync(struct gameboy *gb)
@@ -220,7 +222,7 @@ void apu_trigger_wave(struct gameboy *gb, struct apu_wave_channel *wave)
 
 void apu_trigger_noise(struct gameboy *gb, struct apu_noise_channel *noise)
 {
-	gb->noise.lfsr = ~0;
+	gb->noise.lfsr = BITS(0, 14);
 
 	noise->super.enabled = noise->super.dac;
 
