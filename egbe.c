@@ -332,6 +332,12 @@ int main(int argc, char **argv)
 
 	struct gameboy *curr_gb = gb;
 
+	size_t ss_len = strlen(argv[1]);
+	size_t ss_num = 1;
+	char *ss_buf = calloc(1, ss_len + 5);
+	strncpy(ss_buf, argv[1], ss_len);
+	strcpy(ss_buf + ss_len, ".ss1");
+
 	long joypad_ticks = 0;
 	while (gb->cpu_status != GAMEBOY_CPU_CRASHED) {
 		gameboy_tick(gb);
@@ -371,6 +377,24 @@ int main(int argc, char **argv)
 							gameboy_update_joypad(curr_gb, NULL);
 							curr_gb = (curr_gb == gb) ? alt_gb : gb;
 						}
+						break;
+
+					case SDLK_F1:
+					case SDLK_F2:
+					case SDLK_F3:
+					case SDLK_F4:
+						ss_num = event.key.keysym.sym - SDLK_F1 + 1;
+						ss_buf[ss_len + 3] = ss_num + '0';
+						GBLOG("State %ld selected", ss_num);
+						break;
+					case SDLK_F5:
+						if (!gameboy_save_state(gb, ss_buf))
+							GBLOG("State %ld saved", ss_num);
+						break;
+					case SDLK_F8:
+						if (!gameboy_load_state(gb, ss_buf))
+							GBLOG("State %ld loaded", ss_num);
+						SDL_ClearQueuedAudio(audio.device_id);
 						break;
 					}
 					break;

@@ -8,3 +8,4 @@ egbe
 *.gb
 *.gbc
 *.sram
+*.ss[0-9]

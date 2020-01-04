@@ -1,9 +1,21 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+#include "lcd.h"
 #include "common.h"
 #include <string.h>
 
 #define ROM_BANK_SIZE sizeof(((struct gameboy *)NULL)->rom[0])
 #define SRAM_BANK_SIZE sizeof(((struct gameboy *)NULL)->sram[0])
+
+#define ENDIAN_CHECK (('E' << 24) | ('G' << 16) | ('B' << 8) | 'E')
+
+struct gb_state {
+	int32_t endian_check;
+	uint32_t version; // TODO
+	uint64_t sizeof_gameboy;
+	char title_check[16];
+
+	struct gameboy gb;
+};
 
 static long fsize_rewind(FILE *in)
 {
@@ -386,6 +398,128 @@ int gameboy_save_sram(struct gameboy *gb, char *path)
 	}
 
 	int rc = fwrite_sram(gb, out);
+	fclose(out);
+
+	return rc;
+}
+
+static int fread_state(struct gameboy *gb, FILE *in)
+{
+	struct gb_state state;
+	long size = fsize_rewind(in);
+	long need = sizeof(state);
+
+	if (size < need) {
+		GBLOG("Saved state is too small (got %lX; need >= %lX)",
+		      size, need);
+		return EINVAL;
+	}
+
+	if (!fread(&state, need, 1, in)) {
+		GBLOG("Failed to read header of state file: %m");
+		return EIO;
+	}
+
+	if (state.sizeof_gameboy != sizeof(*gb)) {
+		GBLOG("Saved state differs in sizeof(struct gameboy)");
+		return EINVAL;
+	}
+
+	if (state.endian_check != ENDIAN_CHECK) {
+		GBLOG("Saved state differs in endianness");
+		return EINVAL;
+	}
+
+	if (memcmp(&state.title_check, &gb->rom[0][GAMEBOY_ADDR_GAME_TITLE], 16)) {
+		GBLOG("Saved state has the wrong title (got '%.16s'; need '%.16s')",
+		      (char *)&state.title_check,
+		      (char *)&gb->rom[0][GAMEBOY_ADDR_GAME_TITLE]);
+		return EINVAL;
+	}
+
+	state.gb.on_apu_buffer_filled = gb->on_apu_buffer_filled;
+	state.gb.on_serial_start = gb->on_serial_start;
+	state.gb.on_vblank = gb->on_vblank;
+
+	memset(&state.gb.apu_samples, 0, sizeof(state.gb.apu_samples));
+	state.gb.apu_index = 0;
+
+	state.gb.boot = gb->boot;
+	state.gb.rom = gb->rom;
+	state.gb.sram = gb->sram;
+	state.gb.wram = gb->wram;
+
+	memcpy(gb, &state.gb, sizeof(state.gb));
+
+	gb->romx = gb->rom[gb->rom_bank];
+	gb->sramx = gb->sram[gb->sram_bank];
+	gb->wramx = gb->wram[gb->wram_bank];
+
+	for (int i = 0; i < 40; ++i)
+		gb->sprites_sorted[i] = &gb->sprites[i];
+	gb->sprites_unsorted = true;
+
+	for (int i = 0; i < 40; ++i)
+		lcd_refresh_sprite(gb, &gb->sprites[i]);
+
+	for (int i = 0; i < 0x0400; ++i)
+		lcd_refresh_tilemap(gb, &gb->tilemaps[0].cells_flat[i]);
+	for (int i = 0; i < 0x0400; ++i)
+		lcd_refresh_tilemap(gb, &gb->tilemaps[1].cells_flat[i]);
+
+	if (!fread(gb->wram, gb->wram_size, 1, in)) {
+		GBLOG("Failed to read WRAM");
+		return EIO;
+	}
+
+	if (gb->sram_size && !fread(gb->sram, gb->sram_size, 1, in)) {
+		GBLOG("Failed to read SRAM");
+		return EIO;
+	}
+
+	return 0;
+}
+
+int gameboy_load_state(struct gameboy *gb, char *path)
+{
+	FILE *in = fopen(path, "rb");
+	if (!in) {
+		GBLOG("Failed to open state file for reading: %m");
+		return errno;
+	}
+
+	int rc = fread_state(gb, in);
+	fclose(in);
+
+	return rc;
+}
+
+static int fwrite_state(struct gameboy *gb, FILE *out)
+{
+	struct gb_state state = {
+		.sizeof_gameboy = sizeof(*gb),
+		.endian_check = ENDIAN_CHECK,
+	};
+	memcpy(&state.title_check, &gb->rom[0][GAMEBOY_ADDR_GAME_TITLE], 16);
+
+	memcpy(&state.gb, gb, sizeof(*gb));
+
+	fwrite(&state, sizeof(state), 1, out);
+	fwrite(gb->wram, gb->wram_size, 1, out);
+	fwrite(gb->sram, gb->sram_size, 1, out);
+
+	return 0;
+}
+
+int gameboy_save_state(struct gameboy *gb, char *path)
+{
+	FILE *out = fopen(path, "wb");
+	if (!out) {
+		GBLOG("Failed to open state file for writing: %m");
+		return errno;
+	}
+
+	int rc = fwrite_state(gb, out);
 	fclose(out);
 
 	return rc;

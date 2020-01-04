@@ -499,6 +499,9 @@ void gameboy_remove_cartridge(struct gameboy *gb);
 int gameboy_load_sram(struct gameboy *gb, char *path);
 int gameboy_save_sram(struct gameboy *gb, char *path);
 
+int gameboy_load_state(struct gameboy *gb, char *path);
+int gameboy_save_state(struct gameboy *gb, char *path);
+
 void gameboy_update_joypad(struct gameboy *gb, struct gameboy_joypad *jp);
 
 void gameboy_start_serial(struct gameboy *gb, uint8_t xfer);
