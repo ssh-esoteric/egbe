@@ -186,8 +186,8 @@ static void queue_audio(struct gameboy *gb, void *context)
 			  + (right->noise * !gb->noise.super.muted);
 		buf[i][1] *= right->volume;
 
-		buf[i][0] <<= 21;
-		buf[i][1] <<= 21;
+		buf[i][0] <<= 20;
+		buf[i][1] <<= 20;
 	}
 
 	SDL_QueueAudio(audio->device_id, buf, gb->apu_index * sizeof(int) * 2);
