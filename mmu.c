@@ -191,10 +191,10 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 		return (gb->background_enabled ? BIT(0) : 0)
 		     | (gb->sprites_enabled ? BIT(1) : 0)
 		     | (gb->sprite_size == 16 ? BIT(2) : 0)
-		     | (gb->background_tilemap == &gb->tilemaps[1] ? BIT(3) : 0)
+		     | (gb->background_tilemap ? BIT(3) : 0)
 		     | (gb->tilemap_signed ? 0 : BIT(4))
 		     | (gb->window_enabled ? BIT(5) : 0)
-		     | (gb->window_tilemap == &gb->tilemaps[1] ? BIT(6) : 0)
+		     | (gb->window_tilemap ? BIT(6) : 0)
 		     | (gb->lcd_enabled ? BIT(7) : 0);
 
 	case GAMEBOY_ADDR_STAT:
@@ -719,10 +719,10 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 		gb->background_enabled = (val & BIT(0));
 		gb->sprites_enabled = (val & BIT(1));
 		lcd_update_sprite_mode(gb, val & BIT(2));
-		gb->background_tilemap = &gb->tilemaps[!!(val & BIT(3))];
+		gb->background_tilemap = !!(val & BIT(3));
 		lcd_update_tilemap_mode(gb, !(val & BIT(4)));
 		gb->window_enabled = (val & BIT(5));
-		gb->window_tilemap = &gb->tilemaps[!!(val & BIT(6))];
+		gb->window_tilemap = !!(val & BIT(6));
 		if (val & BIT(7))
 			lcd_enable(gb);
 		else

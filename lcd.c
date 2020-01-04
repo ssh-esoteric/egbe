@@ -75,7 +75,7 @@ static void render_debug(struct gameboy *gb)
 
 	for (int ty = 0; ty < 32; ++ty) {
 		for (int tx = 0; tx < 32; ++tx) {
-			cell = &gb->background_tilemap->cells[ty][tx];
+			cell = &gb->tilemaps[gb->background_tilemap].cells[ty][tx];
 
 			for (int dy = 0; dy < 8; ++dy) {
 				for (int dx = 0; dx < 8; ++dx) {
@@ -91,7 +91,7 @@ static void render_debug(struct gameboy *gb)
 
 	for (int ty = 0; ty < 32; ++ty) {
 		for (int tx = 0; tx < 32; ++tx) {
-			cell = &gb->window_tilemap->cells[ty][tx];
+			cell = &gb->tilemaps[gb->window_tilemap].cells[ty][tx];
 
 			for (int dy = 0; dy < 8; ++dy) {
 				for (int dx = 0; dx < 8; ++dx) {
@@ -164,7 +164,7 @@ static void render_scanline(struct gameboy *gb)
 		uint8_t dx = x + gb->sx;
 
 		struct gameboy_background_cell *cell;
-		cell = &gb->background_tilemap->cells[dy / 8][dx / 8];
+		cell = &gb->tilemaps[gb->background_tilemap].cells[dy / 8][dx / 8];
 
 		uint8_t code = cell->tile->pixels[dy % 8][dx % 8];
 		line[x] = code;
@@ -176,7 +176,7 @@ static void render_scanline(struct gameboy *gb)
 		uint8_t dx = x - gb->wx;
 
 		struct gameboy_background_cell *cell;
-		cell = &gb->window_tilemap->cells[dy / 8][dx / 8];
+		cell = &gb->tilemaps[gb->window_tilemap].cells[dy / 8][dx / 8];
 
 		uint8_t code = cell->tile->pixels[dy % 8][dx % 8];
 		line[x] = code;
@@ -234,9 +234,6 @@ static void enter_vblank(struct gameboy *gb)
 
 void lcd_init(struct gameboy *gb)
 {
-	gb->background_tilemap = &gb->tilemaps[0];
-	gb->window_tilemap = &gb->tilemaps[1];
-
 	for (int i = 0; i < 40; ++i)
 		gb->sprites_sorted[i] = &gb->sprites[i];
 	gb->sprites_unsorted = true;

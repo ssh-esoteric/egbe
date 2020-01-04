@@ -408,8 +408,8 @@ struct gameboy {
 
 	struct gameboy_tile tiles[2][384];
 	struct gameboy_background_table tilemaps[2];
-	struct gameboy_background_table *background_tilemap;
-	struct gameboy_background_table *window_tilemap;
+	uint8_t background_tilemap;
+	uint8_t window_tilemap;
 	uint8_t vram_bank;
 	bool tilemap_signed;
 
