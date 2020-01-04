@@ -36,27 +36,6 @@ void lcd_update_palette_gbc(struct gameboy_palette *p, uint8_t index)
 	p->colors[index] = tmp;
 }
 
-static inline void set_cell_tile_index(struct gameboy *gb,
-                                       struct gameboy_background_cell *cell,
-                                       uint8_t val)
-{
-	int index = gb->tilemap_signed ? (256 + (int8_t)val) : val;
-
-	cell->tile_index = val;
-	cell->tile = &gb->tiles[cell->vram_bank][index];
-}
-
-static inline void set_sprite_tile_index(struct gameboy *gb,
-                                         struct gameboy_sprite *sprite,
-                                         uint8_t val)
-{
-	sprite->tile_index = val;
-	if (gb->sprite_size == 16)
-		sprite->tile = &gb->tiles[sprite->vram_bank][val & 0xFE];
-	else
-		sprite->tile = &gb->tiles[sprite->vram_bank][val];
-}
-
 static void render_debug(struct gameboy *gb)
 {
 	struct gameboy_background_cell *cell;
@@ -258,23 +237,15 @@ void lcd_init(struct gameboy *gb)
 	gb->background_tilemap = &gb->tilemaps[0];
 	gb->window_tilemap = &gb->tilemaps[1];
 
-	gb->tilemap_signed = true;
-	lcd_update_tilemap_mode(gb, false);
+	for (int i = 0; i < 40; ++i)
+		gb->sprites_sorted[i] = &gb->sprites[i];
+	gb->sprites_unsorted = true;
 
 	gb->sprite_size = 16;
 	lcd_update_sprite_mode(gb, false);
 
-	gb->sprites_unsorted = true;
-	for (int i = 0; i < 40; ++i) {
-		gb->sprites[i].palette = &gb->obp[0];
-
-		gb->sprites_sorted[i] = &gb->sprites[i];
-	}
-
-	for (int i = 0; i < 1024; ++i) {
-		gb->tilemaps[0].cells_flat[i].palette = &gb->bgp[0];
-		gb->tilemaps[1].cells_flat[i].palette = &gb->bgp[0];
-	}
+	gb->tilemap_signed = true;
+	lcd_update_tilemap_mode(gb, false);
 
 	gb->lcd_enabled = true;
 	lcd_disable(gb);
@@ -388,6 +359,17 @@ uint8_t lcd_read_sprite(struct gameboy *gb, uint16_t offset)
 	}
 }
 
+void lcd_refresh_sprite(struct gameboy *gb, struct gameboy_sprite *spr)
+{
+	spr->palette = &gb->obp[spr->palette_index];
+
+	uint8_t val = spr->tile_index;
+	if (gb->sprite_size == 16)
+		spr->tile = &gb->tiles[spr->vram_bank][val & 0xFE];
+	else
+		spr->tile = &gb->tiles[spr->vram_bank][val];
+}
+
 void lcd_update_sprite(struct gameboy *gb, uint16_t offset, uint8_t val)
 {
 	struct gameboy_sprite *s = &gb->sprites[offset / 4];
@@ -403,7 +385,8 @@ void lcd_update_sprite(struct gameboy *gb, uint16_t offset, uint8_t val)
 		break;
 
 	case 2:
-		set_sprite_tile_index(gb, s, val);
+		s->tile_index = val;
+		lcd_refresh_sprite(gb, s);
 		break;
 
 	case 3:
@@ -411,14 +394,14 @@ void lcd_update_sprite(struct gameboy *gb, uint16_t offset, uint8_t val)
 		if (gb->gbc) {
 			s->palette_index = (val & BITS(0, 2));
 			s->vram_bank = !!(val & BIT(3));
-			set_sprite_tile_index(gb, s, s->tile_index);
 		} else {
 			s->palette_index = !!(val & BIT(4));
 		}
-		s->palette = &gb->obp[s->palette_index];
 		s->flipx = !!(val & BIT(5));
 		s->flipy = !!(val & BIT(6));
 		s->priority = !!(val & BIT(7));
+
+		lcd_refresh_sprite(gb, s);
 		break;
 	}
 }
@@ -430,11 +413,8 @@ void lcd_update_sprite_mode(struct gameboy *gb, bool is_8x16)
 		return;
 	gb->sprite_size = new_sprite_size;
 
-	for (int i = 0; i < 40; ++i) {
-		struct gameboy_sprite *s = &gb->sprites[i];
-
-		set_sprite_tile_index(gb, s, s->tile_index);
-	}
+	for (int i = 0; i < 40; ++i)
+		lcd_refresh_sprite(gb, &gb->sprites[i]);
 }
 
 uint8_t lcd_read_tile(struct gameboy *gb, uint16_t offset)
@@ -472,6 +452,17 @@ uint8_t lcd_read_tilemap(struct gameboy *gb, uint16_t offset)
 		return cell->tile_index;
 }
 
+void lcd_refresh_tilemap(struct gameboy *gb, struct gameboy_background_cell *cell)
+{
+	cell->palette = &gb->bgp[cell->palette_index];
+
+	int index = cell->tile_index;
+	if (gb->tilemap_signed)
+		index = 256 + (int8_t)index;
+
+	cell->tile = &gb->tiles[cell->vram_bank][index];
+}
+
 void lcd_update_tilemap(struct gameboy *gb, uint16_t offset, uint8_t val)
 {
 	struct gameboy_background_cell *cell;
@@ -485,12 +476,11 @@ void lcd_update_tilemap(struct gameboy *gb, uint16_t offset, uint8_t val)
 		cell->flipx = !!(val & BIT(5));
 		cell->flipy = !!(val & BIT(6));
 		cell->priority = !!(val & BIT(7));
-
-		cell->palette = &gb->bgp[cell->palette_index];
-		set_cell_tile_index(gb, cell, cell->tile_index);
 	} else {
-		set_cell_tile_index(gb, cell, val);
+		cell->tile_index = val;
 	}
+
+	lcd_refresh_tilemap(gb, cell);
 }
 
 void lcd_update_tilemap_mode(struct gameboy *gb, bool is_signed)
@@ -499,12 +489,8 @@ void lcd_update_tilemap_mode(struct gameboy *gb, bool is_signed)
 		return;
 	gb->tilemap_signed = is_signed;
 
-	struct gameboy_background_cell *cell;
-	for (int i = 0; i < 0x0400; ++i) {
-		cell = &gb->tilemaps[0].cells_flat[i];
-		set_cell_tile_index(gb, cell, cell->tile_index);
-
-		cell = &gb->tilemaps[1].cells_flat[i];
-		set_cell_tile_index(gb, cell, cell->tile_index);
-	}
+	for (int i = 0; i < 0x0400; ++i)
+		lcd_refresh_tilemap(gb, &gb->tilemaps[0].cells_flat[i]);
+	for (int i = 0; i < 0x0400; ++i)
+		lcd_refresh_tilemap(gb, &gb->tilemaps[1].cells_flat[i]);
 }
