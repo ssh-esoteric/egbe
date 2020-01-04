@@ -184,36 +184,36 @@ static void render_scanline(struct gameboy *gb)
 	}
 
 	for (int i = 0; i < 40; ++i) {
-		struct gameboy_sprite *s = gb->sprites_sorted[i];
+		struct gameboy_sprite *spr = gb->sprites_sorted[i];
 
-		dy = y - s->y;
+		dy = y - spr->y;
 		if (dy >= gb->sprite_size)
 			continue;
 
-		struct gameboy_tile *tile = s->tile;
+		struct gameboy_tile *tile = spr->tile;
 		if (dy > 7)
 			++tile; // 8x16 mode: use next tile
 
-		uint8_t *row = tile->pixels[s->flipy ? (7 - (dy % 8)) : (dy % 8)];
+		uint8_t *row = tile->pixels[spr->flipy ? (7 - (dy % 8)) : (dy % 8)];
 
 		for (int sx = 0; sx < 8; ++sx) {
-			uint8_t dx = s->x + sx;
+			uint8_t dx = spr->x + sx;
 
 			if (dx >= 160)
 				continue;
 
-			uint8_t code = row[s->flipx ? (7 - sx) : sx];
+			uint8_t code = row[spr->flipx ? (7 - sx) : sx];
 
 			// Sprite color 0 is transparent
 			if (!code)
 				continue;
 
 			// Low-priority sprites only prevail over bg color 0
-			if (s->priority && line[dx])
+			if (spr->priority && line[dx])
 				continue;
 
 			line[dx] = code;
-			gb->screen[y][dx] = s->palette->colors[code];
+			gb->screen[y][dx] = spr->palette->colors[code];
 		}
 
 		// TODO: Stop after 10th sprite per scanline
@@ -350,12 +350,12 @@ void lcd_update_scanline(struct gameboy *gb, uint8_t scanline)
 
 uint8_t lcd_read_sprite(struct gameboy *gb, uint16_t offset)
 {
-	struct gameboy_sprite *s = &gb->sprites[offset / 4];
+	struct gameboy_sprite *spr = &gb->sprites[offset / 4];
 	switch (offset % 4) {
-	case 0:  return s->y + 16;
-	case 1:  return s->x + 8;
-	case 2:  return s->tile_index;
-	default: return s->raw_flags;
+	case 0:  return spr->y + 16;
+	case 1:  return spr->x + 8;
+	case 2:  return spr->tile_index;
+	default: return spr->raw_flags;
 	}
 }
 
@@ -372,36 +372,36 @@ void lcd_refresh_sprite(struct gameboy *gb, struct gameboy_sprite *spr)
 
 void lcd_update_sprite(struct gameboy *gb, uint16_t offset, uint8_t val)
 {
-	struct gameboy_sprite *s = &gb->sprites[offset / 4];
+	struct gameboy_sprite *spr = &gb->sprites[offset / 4];
 	switch (offset % 4) {
 	case 0:
-		s->y = val - 16;
+		spr->y = val - 16;
 		gb->sprites_unsorted = true;
 		break;
 
 	case 1:
-		s->x = val - 8;
+		spr->x = val - 8;
 		gb->sprites_unsorted = true;
 		break;
 
 	case 2:
-		s->tile_index = val;
-		lcd_refresh_sprite(gb, s);
+		spr->tile_index = val;
+		lcd_refresh_sprite(gb, spr);
 		break;
 
 	case 3:
-		s->raw_flags = val;
+		spr->raw_flags = val;
 		if (gb->gbc) {
-			s->palette_index = (val & BITS(0, 2));
-			s->vram_bank = !!(val & BIT(3));
+			spr->palette_index = (val & BITS(0, 2));
+			spr->vram_bank = !!(val & BIT(3));
 		} else {
-			s->palette_index = !!(val & BIT(4));
+			spr->palette_index = !!(val & BIT(4));
 		}
-		s->flipx = !!(val & BIT(5));
-		s->flipy = !!(val & BIT(6));
-		s->priority = !!(val & BIT(7));
+		spr->flipx = !!(val & BIT(5));
+		spr->flipy = !!(val & BIT(6));
+		spr->priority = !!(val & BIT(7));
 
-		lcd_refresh_sprite(gb, s);
+		lcd_refresh_sprite(gb, spr);
 		break;
 	}
 }

@@ -16,7 +16,7 @@ void lcd_update_palette_dmg(struct gameboy_palette *p, uint8_t val);
 void lcd_update_palette_gbc(struct gameboy_palette *p, uint8_t index);
 
 uint8_t lcd_read_sprite(struct gameboy *gb, uint16_t offset);
-void lcd_refresh_sprite(struct gameboy *gb, struct gameboy_sprite *sprite);
+void lcd_refresh_sprite(struct gameboy *gb, struct gameboy_sprite *spr);
 void lcd_update_sprite(struct gameboy *gb, uint16_t offset, uint8_t val);
 void lcd_update_sprite_mode(struct gameboy *gb, bool is_8x16);
 
