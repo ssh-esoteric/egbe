@@ -82,6 +82,8 @@ void gameboy_restart(struct gameboy *gb)
 	gb->sram_enabled = false;
 	gb->timer_enabled = false;
 
+	gb->rtc_latch = ~0; // Just to avoid the important 0x0001
+
 	gameboy_update_joypad(gb, NULL);
 
 	lcd_init(gb);

@@ -396,6 +396,13 @@ int main(int argc, char **argv)
 							GBLOG("State %ld loaded", ss_num);
 						SDL_ClearQueuedAudio(audio.device_id);
 						break;
+
+					case SDLK_h:
+						gb->rtc_seconds += (60 * 60);
+						break;
+					case SDLK_j:
+						gb->rtc_seconds += (60 * 60 * 24);
+						break;
 					}
 					break;
 				}

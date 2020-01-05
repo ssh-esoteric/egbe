@@ -154,6 +154,15 @@ enum gameboy_mbc {
 	GAMEBOY_MBC_CAMERA,
 };
 
+enum gameboy_rtc_status {
+	GAMEBOY_RTC_DISABLED = 0,
+	GAMEBOY_RTC_SECONDS  = 1, // Written as 0x08
+	GAMEBOY_RTC_MINUTES  = 2,
+	GAMEBOY_RTC_HOURS    = 3,
+	GAMEBOY_RTC_DAYS     = 4,
+	GAMEBOY_RTC_FLAGS    = 5, // ... 0x0C
+};
+
 enum gameboy_system {
 	GAMEBOY_SYSTEM_DMG,
 	GAMEBOY_SYSTEM_GBP,
@@ -439,6 +448,12 @@ struct gameboy {
 	uint8_t hram[0x007F];
 
 	bool mbc1_sram_mode;
+
+	enum gameboy_rtc_status rtc_status;
+	int rtc_seconds;
+	long rtc_last_latched;
+	uint16_t rtc_latch;
+	bool rtc_halted;
 
 	uint16_t pc;
 	uint16_t sp;

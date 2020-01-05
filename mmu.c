@@ -80,17 +80,105 @@ static void mbc3_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 		break;
 
 	case 0x4000 ... 0x5FFF:
-		// TODO: RTC registers if mapped
-		gb->sram_bank = val % gb->sram_banks;
+		if (gb->features & GAMEBOY_FEATURE_RTC && val >= 0x08 && val <= 0x0C) {
+			gb->rtc_status = (enum gameboy_rtc_status)(val - 7);
+		} else {
+			gb->rtc_status = GAMEBOY_RTC_DISABLED;
+
+			gb->sram_bank = val % gb->sram_banks;
+		}
 		break;
 
 	case 0x6000 ... 0x7FFF:
-		// TODO: Latch RTC
+		if (gb->features & GAMEBOY_FEATURE_RTC) {
+			gb->rtc_latch = (gb->rtc_latch << 8) | val;
+
+			if (gb->rtc_latch != 0x0001)
+				break;
+
+			// (4MHz CPU >> 22) => seconds
+			size_t mask = BIT(22) - 1;
+			long diff = gb->cycles - gb->rtc_last_latched;
+			gb->rtc_seconds += (diff >> 22);
+			gb->rtc_last_latched = gb->cycles - (diff & mask);
+		}
 		break;
 	}
 
 	gb->romx = gb->rom[gb->rom_bank];
 	gb->sramx = gb->sram[gb->sram_bank];
+}
+
+static uint8_t rtc_read(struct gameboy *gb)
+{
+	int tmp = gb->rtc_seconds;
+
+	switch (gb->rtc_status) {
+	case GAMEBOY_RTC_SECONDS:
+		return tmp % 60;
+
+	case GAMEBOY_RTC_MINUTES:
+		return tmp / 60 % 60;
+
+	case GAMEBOY_RTC_HOURS:
+		return tmp / 60 / 60 % 24;
+
+	case GAMEBOY_RTC_DAYS:
+		return tmp / 60 / 60 / 24 % 256;
+
+	case GAMEBOY_RTC_FLAGS:
+		tmp /= (60 * 60 * 24 * 256);
+
+		return (tmp == 1 ? BIT(0) : 0)
+		     | BITS(1, 5)
+		     | (gb->rtc_halted ? BIT(6) : 0)
+		     | (tmp > 1 ? BIT(7) : 0);
+
+	case GAMEBOY_RTC_DISABLED:
+	default:
+		GBLOG("Invalid RTC state: %d", gb->rtc_status);
+		return 0xFF;
+	}
+}
+
+static void rtc_write(struct gameboy *gb, uint8_t val)
+{
+	int orig = rtc_read(gb);
+	int tmp = orig - val;
+
+	switch (gb->rtc_status) {
+	case GAMEBOY_RTC_SECONDS:
+		gb->rtc_seconds += tmp;
+		break;
+
+	case GAMEBOY_RTC_MINUTES:
+		gb->rtc_seconds += tmp * 60;
+		break;
+
+	case GAMEBOY_RTC_HOURS:
+		gb->rtc_seconds += tmp * 60 * 60;
+		break;
+
+	case GAMEBOY_RTC_DAYS:
+		gb->rtc_seconds += tmp * 60 * 60 * 24;
+		break;
+
+	case GAMEBOY_RTC_FLAGS:
+		gb->rtc_halted = !!(val & BIT(6));
+
+		tmp = (orig & BIT(0)) - (val & BIT(0));
+		gb->rtc_seconds += tmp * 60 * 60 * 24 * 256;
+
+		tmp = (orig & BIT(7)) - (val & BIT(7));
+		tmp = !!tmp;
+		gb->rtc_seconds += tmp * 60 * 60 * 24 * 256 * 2;
+		break;
+
+	case GAMEBOY_RTC_DISABLED:
+	default:
+		GBLOG("Invalid RTC state: %d", gb->rtc_status);
+		break;
+	}
 }
 
 uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
@@ -129,7 +217,12 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 		break;
 
 	case 0xA000 ... 0xBFFF:
-		if (gb->sram_enabled)
+		if (!gb->sram_enabled)
+			break;
+
+		if (gb->rtc_status)
+			return rtc_read(gb);
+		else
 			return gb->sramx[addr % 0x2000 % gb->sram_size];
 		break;
 
@@ -451,7 +544,12 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 		break;
 
 	case 0xA000 ... 0xBFFF:
-		if (gb->sram_enabled)
+		if (!gb->sram_enabled)
+			break;
+
+		if (gb->rtc_status)
+			rtc_write(gb, val);
+		else
 			gb->sramx[addr % 0x2000 % gb->sram_size] = val;
 		break;
 
