@@ -20,9 +20,17 @@ SRCS = \
 	gameboy.c
 OBJS = $(SRCS:.c=.o)
 EGBE_SRCS = $(SRCS) egbe.c
-EGBE_OBJS = $(OBJS) egbe.o
+EGBE_OBJS = $(EGBE_SRCS:.c=.o)
 
 LIBS = -lSDL2
+
+ifdef DEBUG
+	EGBE_SRCS += debugger.c
+	CFLAGS += $(shell pkg-config --cflags ruby)
+	LIBS += $(shell pkg-config --libs ruby)
+else
+	EGBE_SRCS += debugger_stub.c
+endif
 
 .PHONY: all clean
 
@@ -33,6 +41,10 @@ clean:
 
 egbe: $(EGBE_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
+
+# Ruby has non-strict prototypes in its headers
+debugger.o: debugger.c
+	$(CC) $(CFLAGS) -Wno-strict-prototypes -o $@ -c $<
 
 %.o: %.c
 	$(CC) $(CFLAGS) -o $@ -c $<

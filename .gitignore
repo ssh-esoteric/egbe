@@ -9,3 +9,5 @@ egbe
 *.gbc
 *.sram
 *.ss[0-9]
+
+local.rb

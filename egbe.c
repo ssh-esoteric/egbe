@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+#include "debugger.h"
 #include "common.h"
 #include <SDL2/SDL.h>
+
+struct args {
+	int argc;
+	char **argv;
+};
 
 struct texture {
 	void *pixels;
@@ -212,8 +218,12 @@ static void serial_sync(struct gameboy *gb, void *context)
 	gameboy_start_serial(serial->rhs, serial->lhs->sb);
 }
 
-int main(int argc, char **argv)
+int egbe_main(void *context)
 {
+	struct args *args = context;
+	int argc = args->argc;
+	char **argv = args->argv;
+
 	if (argc < 2) {
 		puts("Usage: egbe <ROM.gb> [<BOOT.bin>] [<SRAM.sram>]");
 		return 0;
@@ -403,6 +413,10 @@ int main(int argc, char **argv)
 					case SDLK_j:
 						gb->rtc_seconds += (60 * 60 * 24);
 						break;
+
+					case SDLK_g:
+						debugger_open(gb);
+						break;
 					}
 					break;
 				}
@@ -436,4 +450,11 @@ int main(int argc, char **argv)
 	audio_free(&audio);
 
 	return 0;
+}
+
+int main(int argc, char **argv)
+{
+	struct args args = {argc, argv};
+
+	return debugger_callback(egbe_main, &args);
 }
