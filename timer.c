@@ -16,7 +16,10 @@ void timer_set_frequency(struct gameboy *gb, uint8_t val)
 
 	int mask = gb->timer_frequency_cycles - 1;
 
-	gb->next_timer_in = (gb->cycles | mask) + 1;
+	long div = gb->cycles - gb->div_offset;
+	long next = (div | mask) + 1;
+
+	gb->next_timer_in += (next - div);
 }
 
 void timer_sync(struct gameboy *gb)

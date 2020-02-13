@@ -79,6 +79,7 @@ void gameboy_restart(struct gameboy *gb)
 
 	gb->cpu_status = GAMEBOY_CPU_RUNNING;
 	gb->cycles = 0;
+	gb->div_offset = 0;
 	gb->sram_enabled = false;
 	gb->timer_enabled = false;
 

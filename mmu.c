@@ -267,7 +267,7 @@ uint8_t mmu_read(struct gameboy *gb, uint16_t addr)
 		     | (gb->is_serial_internal ? BIT(0) : 0);
 
 	case GAMEBOY_ADDR_DIV:
-		return (gb->cycles >> 8) & 0xFF;
+		return ((gb->cycles - gb->div_offset) >> 8) & 0xFF;
 
 	case GAMEBOY_ADDR_TIMA:
 		return gb->timer_counter;
@@ -615,15 +615,10 @@ void mmu_write(struct gameboy *gb, uint16_t addr, uint8_t val)
 		break;
 
 	case GAMEBOY_ADDR_DIV:
-		gb->next_apu_frame_in -= gb->cycles;
-		gb->sq1.super.next_tick_in -= gb->cycles;
-		gb->sq2.super.next_tick_in -= gb->cycles;
-		gb->wave.super.next_tick_in -= gb->cycles;
-		gb->noise.super.next_tick_in -= gb->cycles;
-		gb->next_lcd_status_in -= gb->cycles;
-		gb->next_serial_in -= gb->cycles;
-		gb->next_timer_in -= gb->cycles;
-		gb->cycles = 0;
+		gb->div_offset = gb->cycles;
+
+		gb->next_apu_frame_in = gb->cycles + 8192;
+		gb->next_timer_in = gb->cycles + gb->timer_frequency_cycles;
 		break;
 
 	case GAMEBOY_ADDR_TIMA:

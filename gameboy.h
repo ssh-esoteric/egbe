@@ -323,6 +323,7 @@ struct gameboy {
 
 	enum gameboy_cpu_status cpu_status;
 	long cycles;
+	long div_offset;
 
 	bool double_speed;
 	bool double_speed_switch;
