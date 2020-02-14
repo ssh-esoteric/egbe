@@ -205,17 +205,19 @@ static void toggle_channel(struct apu_channel *super, char *name)
 	GBLOG("APU: %s %s", super->muted ? "Muted" : "Unmuted", name);
 }
 
-struct serial_context {
-	struct gameboy *lhs;
-	struct gameboy *rhs;
+struct local_serial_context {
+	long offset;
+	struct gameboy *host;
+	struct gameboy *guest;
+	bool xfer_pending;
 };
 
-static void serial_sync(struct gameboy *gb, void *context)
+static void local_serial_sync(struct gameboy *gb, void *context)
 {
-	struct serial_context *serial = context;
+	struct local_serial_context *serial = context;
 
-	gameboy_start_serial(serial->lhs, serial->rhs->sb);
-	gameboy_start_serial(serial->rhs, serial->lhs->sb);
+	serial->offset = gb->cycles;
+	serial->xfer_pending = true;
 }
 
 int egbe_main(void *context)
@@ -298,16 +300,16 @@ int egbe_main(void *context)
 		SDL_PauseAudioDevice(audio.device_id, 0);
 	}
 
-	struct serial_context serial_gbs = {
-		.lhs = gb,
-		.rhs = alt_gb,
+	struct local_serial_context local_serial = {
+		.host = gb,
+		.guest = alt_gb,
+		.offset = 0,
+		.xfer_pending = false,
 	};
 	if (alt_gb) {
-		gb->on_serial_start.callback = serial_sync;
-		gb->on_serial_start.context = &serial_gbs;
-
-		alt_gb->on_serial_start.callback = serial_sync;
-		alt_gb->on_serial_start.context = &serial_gbs;
+		// Only the "host" GB can start a transfer
+		gb->on_serial_start.callback = local_serial_sync;
+		gb->on_serial_start.context = &local_serial;
 	}
 
 	gameboy_insert_cartridge(gb, argv[1]);
@@ -348,95 +350,110 @@ int egbe_main(void *context)
 	strncpy(ss_buf, argv[1], ss_len);
 	strcpy(ss_buf + ss_len, ".ss1");
 
-	long joypad_ticks = 0;
+	// ~30 event samples per second
+	#define EVENT_CYCLES 140000
+
 	while (gb->cpu_status != GAMEBOY_CPU_CRASHED) {
-		gameboy_tick(gb);
-		if (alt_gb)
-			gameboy_tick(alt_gb);
 
-		if (++joypad_ticks > 5000) {
-			joypad_ticks = 0;
+		if (alt_gb) {
+			local_serial.offset = gb->cycles + EVENT_CYCLES;
 
-			SDL_Event event;
-			while (SDL_PollEvent(&event)) {
-				switch (event.type) {
-				case SDL_QUIT:
+			while (gb->cycles < local_serial.offset)
+				gameboy_tick(gb);
+
+			while (alt_gb->cycles < local_serial.offset)
+				gameboy_tick(alt_gb);
+
+			if (local_serial.xfer_pending) {
+				gameboy_start_serial(gb, alt_gb->sb);
+				gameboy_start_serial(alt_gb, gb->sb);
+				local_serial.xfer_pending = false;
+			}
+		} else {
+			long till = gb->cycles + EVENT_CYCLES;
+			while (gb->cycles < till)
+				gameboy_tick(gb);
+		}
+
+		SDL_Event event;
+		while (SDL_PollEvent(&event)) {
+			switch (event.type) {
+			case SDL_QUIT:
+				gb->cpu_status = GAMEBOY_CPU_CRASHED;
+				break;
+
+			case SDL_KEYDOWN:
+				switch (event.key.keysym.sym) {
+				case SDLK_q:
+				case SDLK_ESCAPE:
 					gb->cpu_status = GAMEBOY_CPU_CRASHED;
 					break;
-
-				case SDL_KEYDOWN:
-					switch (event.key.keysym.sym) {
-					case SDLK_q:
-					case SDLK_ESCAPE:
-						gb->cpu_status = GAMEBOY_CPU_CRASHED;
-						break;
-					case SDLK_1:
-						toggle_channel(&gb->sq1.super, "Square 1");
-						break;
-					case SDLK_2:
-						toggle_channel(&gb->sq2.super, "Square 2");
-						break;
-					case SDLK_3:
-						toggle_channel(&gb->wave.super, "Wave");
-						break;
-					case SDLK_4:
-						toggle_channel(&gb->noise.super, "Noise");
-						break;
-					case SDLK_LCTRL:
-						if (alt_gb) {
-							gameboy_update_joypad(curr_gb, NULL);
-							curr_gb = (curr_gb == gb) ? alt_gb : gb;
-						}
-						break;
-
-					case SDLK_F1:
-					case SDLK_F2:
-					case SDLK_F3:
-					case SDLK_F4:
-						ss_num = event.key.keysym.sym - SDLK_F1 + 1;
-						ss_buf[ss_len + 3] = ss_num + '0';
-						GBLOG("State %ld selected", ss_num);
-						break;
-					case SDLK_F5:
-						if (!gameboy_save_state(gb, ss_buf))
-							GBLOG("State %ld saved", ss_num);
-						break;
-					case SDLK_F8:
-						if (!gameboy_load_state(gb, ss_buf))
-							GBLOG("State %ld loaded", ss_num);
-						SDL_ClearQueuedAudio(audio.device_id);
-						break;
-
-					case SDLK_h:
-						gb->rtc_seconds += (60 * 60);
-						break;
-					case SDLK_j:
-						gb->rtc_seconds += (60 * 60 * 24);
-						break;
-
-					case SDLK_g:
-						debugger_open(gb);
-						break;
+				case SDLK_1:
+					toggle_channel(&gb->sq1.super, "Square 1");
+					break;
+				case SDLK_2:
+					toggle_channel(&gb->sq2.super, "Square 2");
+					break;
+				case SDLK_3:
+					toggle_channel(&gb->wave.super, "Wave");
+					break;
+				case SDLK_4:
+					toggle_channel(&gb->noise.super, "Noise");
+					break;
+				case SDLK_LCTRL:
+					if (alt_gb) {
+						gameboy_update_joypad(curr_gb, NULL);
+						curr_gb = (curr_gb == gb) ? alt_gb : gb;
 					}
 					break;
+
+				case SDLK_F1:
+				case SDLK_F2:
+				case SDLK_F3:
+				case SDLK_F4:
+					ss_num = event.key.keysym.sym - SDLK_F1 + 1;
+					ss_buf[ss_len + 3] = ss_num + '0';
+					GBLOG("State %ld selected", ss_num);
+					break;
+				case SDLK_F5:
+					if (!gameboy_save_state(gb, ss_buf))
+						GBLOG("State %ld saved", ss_num);
+					break;
+				case SDLK_F8:
+					if (!gameboy_load_state(gb, ss_buf))
+						GBLOG("State %ld loaded", ss_num);
+					SDL_ClearQueuedAudio(audio.device_id);
+					break;
+
+				case SDLK_h:
+					gb->rtc_seconds += (60 * 60);
+					break;
+				case SDLK_j:
+					gb->rtc_seconds += (60 * 60 * 24);
+					break;
+
+				case SDLK_g:
+					debugger_open(gb);
+					break;
 				}
+				break;
 			}
-
-			const uint8_t *keys = SDL_GetKeyboardState(NULL);
-
-			struct gameboy_joypad jp = {
-				.right = keys[SDL_SCANCODE_RIGHT],
-				.left  = keys[SDL_SCANCODE_LEFT],
-				.up    = keys[SDL_SCANCODE_UP],
-				.down  = keys[SDL_SCANCODE_DOWN],
-
-				.a      = keys[SDL_SCANCODE_A],
-				.b      = keys[SDL_SCANCODE_D],
-				.select = keys[SDL_SCANCODE_RSHIFT],
-				.start  = keys[SDL_SCANCODE_RETURN],
-			};
-			gameboy_update_joypad(curr_gb, &jp);
 		}
+
+		const uint8_t *keys = SDL_GetKeyboardState(NULL);
+
+		struct gameboy_joypad jp = {
+			.right = keys[SDL_SCANCODE_RIGHT],
+			.left  = keys[SDL_SCANCODE_LEFT],
+			.up    = keys[SDL_SCANCODE_UP],
+			.down  = keys[SDL_SCANCODE_DOWN],
+
+			.a      = keys[SDL_SCANCODE_A],
+			.b      = keys[SDL_SCANCODE_D],
+			.select = keys[SDL_SCANCODE_RSHIFT],
+			.start  = keys[SDL_SCANCODE_RETURN],
+		};
+		gameboy_update_joypad(curr_gb, &jp);
 	}
 
 	if (argc >= 4)

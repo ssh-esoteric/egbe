@@ -1272,8 +1272,6 @@ void gameboy_tick(struct gameboy *gb)
 {
 	switch (gb->cpu_status) {
 	case GAMEBOY_CPU_CRASHED:
-		break;
-
 	case GAMEBOY_CPU_STOPPED:
 		tick(gb);
 		break;
