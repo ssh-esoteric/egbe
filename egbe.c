@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
+#define _GNU_SOURCE
 #include "debugger.h"
+#include "egbe.h"
 #include "common.h"
 #include <SDL2/SDL.h>
+#include <string.h>
 
 struct args {
 	int argc;
@@ -205,19 +208,87 @@ static void toggle_channel(struct apu_channel *super, char *name)
 	GBLOG("APU: %s %s", super->muted ? "Muted" : "Unmuted", name);
 }
 
-struct local_serial_context {
-	long offset;
-	struct gameboy *host;
-	struct gameboy *guest;
-	bool xfer_pending;
-};
-
-static void local_serial_sync(struct gameboy *gb, void *context)
+static void local_solo_tick(struct egbe_gameboy *self)
 {
-	struct local_serial_context *serial = context;
+	self->till = self->gb->cycles + EGBE_EVENT_CYCLES;
+	while (self->gb->cycles < self->till)
+		gameboy_tick(self->gb);
+}
 
-	serial->offset = gb->cycles;
-	serial->xfer_pending = true;
+static void local_serial_interrupt(struct gameboy *gb, void *context)
+{
+	struct egbe_gameboy *self = context;
+
+	self->till = gb->cycles;
+	self->xfer_pending = true;
+}
+
+static void local_serial_tick(struct egbe_gameboy *host)
+{
+	struct egbe_gameboy *guest = host->context;
+
+	// Note that host->till could be set early from local_serial_interrupt
+	host->till = host->gb->cycles + EGBE_EVENT_CYCLES;
+	while (host->gb->cycles < host->till)
+		gameboy_tick(host->gb);
+
+	guest->till = host->till;
+	while (guest->gb->cycles < guest->till)
+		gameboy_tick(guest->gb);
+
+	if (host->xfer_pending) {
+		gameboy_start_serial(host->gb, guest->gb->sb);
+		gameboy_start_serial(guest->gb, host->gb->sb);
+		host->xfer_pending = false;
+	}
+}
+
+void egbe_gameboy_init(struct egbe_gameboy *self, char *cart_path, char *boot_path)
+{
+	self->cart_path = cart_path ? strdup(cart_path) : NULL;
+	self->boot_path = boot_path ? strdup(boot_path) : NULL;
+	self->sram_path = NULL;
+	self->state_path = NULL;
+
+	if (self->cart_path) {
+		size_t len = strlen(cart_path);
+
+		self->sram_path = calloc(1, len + 6);
+		strncpy(self->sram_path, cart_path, len);
+		strcpy(self->sram_path + len, ".sram");
+
+		self->state_path = calloc(1, len + 5);
+		self->state_path_end = self->state_path + len + 3;
+		self->state_num = 1;
+		strncpy(self->state_path, cart_path, len);
+		strcpy(self->state_path + len, ".ss1");
+	}
+
+	if (self->boot_path)
+		gameboy_insert_boot_rom(self->gb, self->boot_path);
+	if (self->cart_path)
+		gameboy_insert_cartridge(self->gb, self->cart_path);
+	if (self->sram_path)
+		gameboy_load_sram(self->gb, self->sram_path);
+
+	gameboy_restart(self->gb);
+}
+
+void egbe_gameboy_cleanup(struct egbe_gameboy *self)
+{
+	if (self->gb)
+		gameboy_free(self->gb);
+
+	free(self->boot_path);
+	free(self->cart_path);
+	free(self->sram_path);
+	free(self->state_path);
+}
+
+void egbe_gameboy_set_savestate_num(struct egbe_gameboy *self, char n)
+{
+	self->state_num = n;
+	*self->state_path_end = n + '0';
 }
 
 int egbe_main(void *context)
@@ -241,41 +312,75 @@ int egbe_main(void *context)
 	if (getenv("GBC"))
 		system = GAMEBOY_SYSTEM_GBC;
 
-	struct gameboy *gb = gameboy_alloc(system);
-	if (!gb)
+	struct egbe_gameboy host = {
+		.gb = gameboy_alloc(system),
+		.tick = local_solo_tick,
+	};
+	struct egbe_gameboy guest = { 0 };
+	struct egbe_gameboy *focus = &host;
+
+	if (!host.gb)
 		return 1;
 
-	struct gameboy *alt_gb = NULL;
-	if (getenv("SERIAL"))
-		alt_gb = gameboy_alloc(system);
+	char *serial = getenv("SERIAL");
+	if (!serial) {
+		; // fallthrough
+	} else if (strcasecmp(serial, "local") == 0) {
+		guest.gb = gameboy_alloc(system);
+		if (!guest.gb)
+			return 1;
+
+		// TODO: host.status and guest.status should be used somewhere
+		host.tick = local_serial_tick;
+		host.context = &guest;
+
+		host.gb->on_serial_start.callback = local_serial_interrupt;
+		host.gb->on_serial_start.context = &host;
+	} else if (strcasecmp(serial, "curl") == 0) {
+		GBLOG("TODO: curl serial handler");
+	} else {
+		GBLOG("Unknown SERIAL value: %s", serial);
+	}
+
+	char *host_cart = getenv("CART1") ?: getenv("CART") ?: argv[1];
+	char *host_boot = getenv("BOOT1") ?: getenv("BOOT") ?: argv[2];
+
+	egbe_gameboy_init(&host, host_cart, host_boot);
+
+	if (guest.gb) {
+		char *guest_cart = getenv("CART2") ?: host_cart;
+		char *guest_boot = getenv("BOOT2") ?: host_boot;
+
+		egbe_gameboy_init(&guest, guest_cart, guest_boot);
+	}
 
 	struct view view = {
 		.screen = {
-			.pixels = gb->screen,
+			.pixels = host.gb->screen,
 			.rect = { .x = 232, .y = 264, .w = 160, .h = 144, },
 		},
 		.alt_screen = {
-			.pixels = alt_gb ? alt_gb->screen : NULL,
+			.pixels = guest.gb ? guest.gb->screen : NULL,
 			.rect = { .x = 396, .y = 264, .w = 160, .h = 144, },
 		},
 		.dbg_background = {
-			.pixels = gb->dbg_background,
+			.pixels = host.gb->dbg_background,
 			.rect = { .x = 136, .y =   4, .w = 256, .h = 256, },
 		},
 		.dbg_window = {
-			.pixels = gb->dbg_window,
+			.pixels = host.gb->dbg_window,
 			.rect = { .x = 396, .y =   4, .w = 256, .h = 256, },
 		},
 		.dbg_palettes = {
-			.pixels = gb->dbg_palettes,
+			.pixels = host.gb->dbg_palettes,
 			.rect = { .x = 136, .y = 264, .w =  86, .h = 82, },
 		},
 		.dbg_vram = {
-			.pixels = gb->dbg_vram,
+			.pixels = host.gb->dbg_vram,
 			.rect = { .x =   4, .y =   4, .w = 128, .h = 192, },
 		},
 		.dbg_vram_gbc = {
-			.pixels = gb->dbg_vram_gbc,
+			.pixels = host.gb->dbg_vram_gbc,
 			.rect = { .x =   4, .y = 200, .w = 128, .h = 192, },
 		},
 	};
@@ -283,8 +388,8 @@ int egbe_main(void *context)
 	if (view_init(&view)) {
 		GBLOG("Failed to initialize SDL view");
 	} else {
-		gb->on_vblank.callback = on_vblank;
-		gb->on_vblank.context = &view;
+		host.gb->on_vblank.callback = on_vblank;
+		host.gb->on_vblank.context = &view;
 	}
 
 	struct audio audio = {
@@ -294,116 +399,57 @@ int egbe_main(void *context)
 	if (audio_init(&audio)) {
 		GBLOG("Failed to initialize SDL audio");
 	} else {
-		gb->on_apu_buffer_filled.callback = queue_audio;
-		gb->on_apu_buffer_filled.context = &audio;
+		host.gb->on_apu_buffer_filled.callback = queue_audio;
+		host.gb->on_apu_buffer_filled.context = &audio;
 
 		SDL_PauseAudioDevice(audio.device_id, 0);
 	}
 
-	struct local_serial_context local_serial = {
-		.host = gb,
-		.guest = alt_gb,
-		.offset = 0,
-		.xfer_pending = false,
-	};
-	if (alt_gb) {
-		// Only the "host" GB can start a transfer
-		gb->on_serial_start.callback = local_serial_sync;
-		gb->on_serial_start.context = &local_serial;
+	// host.gb->sq1.super.muted = true;
+	// host.gb->sq2.super.muted = true;
+	// host.gb->wave.super.muted = true;
+	// host.gb->noise.super.muted = true;
+
+	if (guest.gb) {
+		guest.gb->sq1.super.muted = true;
+		guest.gb->sq2.super.muted = true;
+		guest.gb->wave.super.muted = true;
+		guest.gb->noise.super.muted = true;
 	}
 
-	gameboy_insert_cartridge(gb, argv[1]);
-	if (alt_gb)
-		gameboy_insert_cartridge(alt_gb, argv[1]);
+	while (focus->gb->cpu_status != GAMEBOY_CPU_CRASHED) {
 
-	if (argc >= 3) {
-		gameboy_insert_boot_rom(gb, argv[2]);
-		if (alt_gb)
-			gameboy_insert_boot_rom(alt_gb, argv[2]);
-	}
-
-	if (argc >= 4) {
-		gameboy_load_sram(gb, argv[3]);
-		if (alt_gb)
-			gameboy_load_sram(alt_gb, argv[3]);
-	}
-
-	// gb->sq1.super.muted = true;
-	// gb->sq2.super.muted = true;
-	// gb->wave.super.muted = true;
-	// gb->noise.super.muted = true;
-	gameboy_restart(gb);
-
-	if (alt_gb) {
-		alt_gb->sq1.super.muted = true;
-		alt_gb->sq2.super.muted = true;
-		alt_gb->wave.super.muted = true;
-		alt_gb->noise.super.muted = true;
-		gameboy_restart(alt_gb);
-	}
-
-	struct gameboy *curr_gb = gb;
-
-	size_t ss_len = strlen(argv[1]);
-	size_t ss_num = 1;
-	char *ss_buf = calloc(1, ss_len + 5);
-	strncpy(ss_buf, argv[1], ss_len);
-	strcpy(ss_buf + ss_len, ".ss1");
-
-	// ~30 event samples per second
-	#define EVENT_CYCLES 140000
-
-	while (gb->cpu_status != GAMEBOY_CPU_CRASHED) {
-
-		if (alt_gb) {
-			local_serial.offset = gb->cycles + EVENT_CYCLES;
-
-			while (gb->cycles < local_serial.offset)
-				gameboy_tick(gb);
-
-			while (alt_gb->cycles < local_serial.offset)
-				gameboy_tick(alt_gb);
-
-			if (local_serial.xfer_pending) {
-				gameboy_start_serial(gb, alt_gb->sb);
-				gameboy_start_serial(alt_gb, gb->sb);
-				local_serial.xfer_pending = false;
-			}
-		} else {
-			long till = gb->cycles + EVENT_CYCLES;
-			while (gb->cycles < till)
-				gameboy_tick(gb);
-		}
+		host.tick(&host);
 
 		SDL_Event event;
 		while (SDL_PollEvent(&event)) {
 			switch (event.type) {
 			case SDL_QUIT:
-				gb->cpu_status = GAMEBOY_CPU_CRASHED;
+				focus->gb->cpu_status = GAMEBOY_CPU_CRASHED;
 				break;
 
 			case SDL_KEYDOWN:
 				switch (event.key.keysym.sym) {
 				case SDLK_q:
 				case SDLK_ESCAPE:
-					gb->cpu_status = GAMEBOY_CPU_CRASHED;
+					focus->gb->cpu_status = GAMEBOY_CPU_CRASHED;
 					break;
 				case SDLK_1:
-					toggle_channel(&gb->sq1.super, "Square 1");
+					toggle_channel(&host.gb->sq1.super, "Square 1");
 					break;
 				case SDLK_2:
-					toggle_channel(&gb->sq2.super, "Square 2");
+					toggle_channel(&host.gb->sq2.super, "Square 2");
 					break;
 				case SDLK_3:
-					toggle_channel(&gb->wave.super, "Wave");
+					toggle_channel(&host.gb->wave.super, "Wave");
 					break;
 				case SDLK_4:
-					toggle_channel(&gb->noise.super, "Noise");
+					toggle_channel(&host.gb->noise.super, "Noise");
 					break;
 				case SDLK_LCTRL:
-					if (alt_gb) {
-						gameboy_update_joypad(curr_gb, NULL);
-						curr_gb = (curr_gb == gb) ? alt_gb : gb;
+					if (guest.gb) {
+						gameboy_update_joypad(focus->gb, NULL);
+						focus = (focus == &host) ? &guest : &host;
 					}
 					break;
 
@@ -411,29 +457,28 @@ int egbe_main(void *context)
 				case SDLK_F2:
 				case SDLK_F3:
 				case SDLK_F4:
-					ss_num = event.key.keysym.sym - SDLK_F1 + 1;
-					ss_buf[ss_len + 3] = ss_num + '0';
-					GBLOG("State %ld selected", ss_num);
+					egbe_gameboy_set_savestate_num(focus, event.key.keysym.sym - SDLK_F1 + 1);
+					GBLOG("State %d selected", focus->state_num);
 					break;
 				case SDLK_F5:
-					if (!gameboy_save_state(gb, ss_buf))
-						GBLOG("State %ld saved", ss_num);
+					if (!gameboy_save_state(focus->gb, focus->state_path))
+						GBLOG("State %d saved", focus->state_num);
 					break;
 				case SDLK_F8:
-					if (!gameboy_load_state(gb, ss_buf))
-						GBLOG("State %ld loaded", ss_num);
+					if (!gameboy_load_state(focus->gb, focus->state_path))
+						GBLOG("State %d loaded", focus->state_num);
 					SDL_ClearQueuedAudio(audio.device_id);
 					break;
 
 				case SDLK_h:
-					gb->rtc_seconds += (60 * 60);
+					focus->gb->rtc_seconds += (60 * 60);
 					break;
 				case SDLK_j:
-					gb->rtc_seconds += (60 * 60 * 24);
+					focus->gb->rtc_seconds += (60 * 60 * 24);
 					break;
 
 				case SDLK_g:
-					debugger_open(gb);
+					debugger_open(focus->gb);
 					break;
 				}
 				break;
@@ -453,15 +498,17 @@ int egbe_main(void *context)
 			.select = keys[SDL_SCANCODE_RSHIFT],
 			.start  = keys[SDL_SCANCODE_RETURN],
 		};
-		gameboy_update_joypad(curr_gb, &jp);
+		gameboy_update_joypad(focus->gb, &jp);
 	}
 
-	if (argc >= 4)
-		gameboy_save_sram(gb, argv[3]);
+	if (host.gb->sram)
+		gameboy_save_sram(host.gb, host.sram_path);
 
-	gameboy_free(gb);
-	if (alt_gb)
-		gameboy_free(alt_gb);
+	if (guest.gb && guest.gb->sram && strcmp(host.sram_path, guest.sram_path) != 0)
+		gameboy_save_sram(guest.gb, guest.sram_path);
+
+	egbe_gameboy_cleanup(&host);
+	egbe_gameboy_cleanup(&guest);
 
 	view_free(&view);
 	audio_free(&audio);
