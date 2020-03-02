@@ -279,6 +279,9 @@ void egbe_gameboy_cleanup(struct egbe_gameboy *self)
 	if (self->gb)
 		gameboy_free(self->gb);
 
+	if (self->cleanup)
+		self->cleanup(self);
+
 	free(self->boot_path);
 	free(self->cart_path);
 	free(self->sram_path);
@@ -337,7 +340,8 @@ int egbe_main(void *context)
 		host.gb->on_serial_start.callback = local_serial_interrupt;
 		host.gb->on_serial_start.context = &host;
 	} else if (strcasecmp(serial, "curl") == 0) {
-		GBLOG("TODO: curl serial handler");
+		if (egbe_gameboy_init_curl(&host, getenv("SERIAL_URL")))
+			GBLOG("Failed to register curl serial handler");
 	} else {
 		GBLOG("Unknown SERIAL value: %s", serial);
 	}
@@ -430,6 +434,16 @@ int egbe_main(void *context)
 
 			case SDL_KEYDOWN:
 				switch (event.key.keysym.sym) {
+				case SDLK_l:
+					if (focus->connect) {
+						GBLOG("Attempting to start link cable");
+						int rc = focus->connect(focus);
+						if (rc)
+							GBLOG("Failed to connect: %d", rc);
+					} else {
+						GBLOG("No link cable handler configured");
+					}
+					break;
 				case SDLK_q:
 				case SDLK_ESCAPE:
 					focus->gb->cpu_status = GAMEBOY_CPU_CRASHED;

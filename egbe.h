@@ -25,10 +25,13 @@ struct egbe_gameboy {
 	char *state_path_end;
 	char state_num;
 
+	long start;
 	long till;
 	enum egbe_link_status status;
 	bool xfer_pending;
 
+	void (*cleanup)(struct egbe_gameboy *self);
+	int (*connect)(struct egbe_gameboy *self);
 	void (*tick)(struct egbe_gameboy *self);
 
 	void *context;
@@ -36,6 +39,8 @@ struct egbe_gameboy {
 
 void egbe_gameboy_init(struct egbe_gameboy *self, char *cart_path, char *boot_path);
 void egbe_gameboy_cleanup(struct egbe_gameboy *self);
+
+int egbe_gameboy_init_curl(struct egbe_gameboy *self, char *base_url);
 
 void egbe_gameboy_set_savestate_num(struct egbe_gameboy *self, char n);
 

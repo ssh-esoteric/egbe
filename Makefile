@@ -24,6 +24,14 @@ EGBE_OBJS = $(EGBE_SRCS:.c=.o)
 
 LIBS = -lSDL2
 
+ifdef CURL
+	EGBE_SRCS += egbe_curl.c
+	CFLAGS += $(shell pkg-config --cflags libcurl)
+	LIBS += $(shell pkg-config --libs libcurl)
+else
+	EGBE_SRCS += egbe_curl_stub.c
+endif
+
 ifdef DEBUG
 	EGBE_SRCS += debugger.c
 	CFLAGS += $(shell pkg-config --cflags ruby)
