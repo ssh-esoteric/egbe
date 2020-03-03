@@ -1,15 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #define _GNU_SOURCE
-#include "debugger.h"
 #include "egbe.h"
 #include "common.h"
 #include <SDL2/SDL.h>
 #include <string.h>
-
-struct args {
-	int argc;
-	char **argv;
-};
 
 struct texture {
 	void *pixels;
@@ -294,12 +288,8 @@ void egbe_gameboy_set_savestate_num(struct egbe_gameboy *self, char n)
 	*self->state_path_end = n + '0';
 }
 
-int egbe_main(void *context)
+int egbe_main(int argc, char **argv)
 {
-	struct args *args = context;
-	int argc = args->argc;
-	char **argv = args->argv;
-
 	if (argc < 2) {
 		puts("Usage: egbe <ROM.gb> [<BOOT.bin>] [<SRAM.sram>]");
 		return 0;
@@ -492,7 +482,7 @@ int egbe_main(void *context)
 					break;
 
 				case SDLK_g:
-					debugger_open(focus->gb);
+					egbe_gameboy_debug(focus);
 					break;
 				}
 				break;
@@ -528,11 +518,4 @@ int egbe_main(void *context)
 	audio_free(&audio);
 
 	return 0;
-}
-
-int main(int argc, char **argv)
-{
-	struct args args = {argc, argv};
-
-	return debugger_callback(egbe_main, &args);
 }

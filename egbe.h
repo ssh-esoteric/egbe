@@ -44,4 +44,7 @@ int egbe_gameboy_init_curl(struct egbe_gameboy *self, char *base_url);
 
 void egbe_gameboy_set_savestate_num(struct egbe_gameboy *self, char n);
 
+void egbe_gameboy_debug(struct egbe_gameboy *self);
+int egbe_main(int argc, char **argv);
+
 #endif

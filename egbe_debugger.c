@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-#include "debugger.h"
+#include "egbe.h"
 #include "common.h"
 #include <time.h> // Required before ruby.h to declare struct timespec
 #include <ruby.h>
@@ -113,7 +113,7 @@ static VALUE cAccessor_inspect(VALUE self)
 	return rb_sprintf("%s: %s", rb_class2name(klass), buf);
 }
 
-static void debugger_init()
+static void debugger_init(void)
 {
 	mEGBE = rb_define_module("EGBE");
 
@@ -321,10 +321,10 @@ static void debugger_free(void)
 	ruby_cleanup(0);
 }
 
-void debugger_open(struct gameboy *gb)
+void egbe_gameboy_debug(struct egbe_gameboy *egb)
 {
 	if (rb_gv_get("$gb") == Qnil) {
-		VALUE self = Data_Wrap_Struct(cGB, NULL, NULL, gb);
+		VALUE self = Data_Wrap_Struct(cGB, NULL, NULL, egb->gb);
 		rb_gv_set("$gb", self);
 		rb_funcall(self, rb_intern("initialize"), 0);
 
@@ -334,7 +334,7 @@ void debugger_open(struct gameboy *gb)
 	rb_eval_string("$binding.irb");
 }
 
-int debugger_callback(int (*callback)(void *context), void *context)
+int main(int argc, char **argv)
 {
 	// Ensure that all Ruby code happens on this stack frame
 	// See https://silverhammermba.github.io/emberb/embed/#startup-teardown
@@ -344,7 +344,7 @@ int debugger_callback(int (*callback)(void *context), void *context)
 	ruby_script("EGBE");
 
 	debugger_init();
-	int rc = callback(context);
+	int rc = egbe_main(argc, argv);
 	debugger_free();
 
 	return rc;

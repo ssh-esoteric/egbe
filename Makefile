@@ -33,11 +33,11 @@ else
 endif
 
 ifdef DEBUG
-	EGBE_SRCS += debugger.c
+	EGBE_SRCS += egbe_debugger.c
 	CFLAGS += $(shell pkg-config --cflags ruby)
 	LIBS += $(shell pkg-config --libs ruby)
 else
-	EGBE_SRCS += debugger_stub.c
+	EGBE_SRCS += egbe_debugger_stub.c
 endif
 
 .PHONY: all clean
@@ -51,7 +51,7 @@ egbe: $(EGBE_OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
 
 # Ruby has non-strict prototypes in its headers
-debugger.o: debugger.c
+egbe_debugger.o: egbe_debugger.c
 	$(CC) $(CFLAGS) -Wno-strict-prototypes -o $@ -c $<
 
 %.o: %.c
