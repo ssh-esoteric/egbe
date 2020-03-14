@@ -444,6 +444,13 @@ static int fread_state(struct gameboy *gb, FILE *in)
 	memset(&state.gb.apu_samples, 0, sizeof(state.gb.apu_samples));
 	state.gb.apu_index = 0;
 
+	state.gb.screen = gb->screen;
+	state.gb.dbg_background = gb->dbg_background;
+	state.gb.dbg_window = gb->dbg_window;
+	state.gb.dbg_palettes = gb->dbg_palettes;
+	state.gb.dbg_vram = gb->dbg_vram;
+	state.gb.dbg_vram_gbc = gb->dbg_vram_gbc;
+
 	state.gb.boot = gb->boot;
 	state.gb.rom = gb->rom;
 	state.gb.sram = gb->sram;

@@ -6,7 +6,7 @@
 #include <string.h>
 
 struct texture {
-	void *pixels;
+	int *pixels;
 	struct SDL_Texture *texture;
 	struct SDL_Rect rect;
 };
@@ -28,8 +28,14 @@ struct audio {
 	SDL_AudioDeviceID device_id;
 };
 
-static int texture_init(struct texture *t, struct SDL_Renderer *r)
+static int texture_init(struct texture *t, struct SDL_Renderer *r, size_t size)
 {
+	t->pixels = calloc(1, size);
+	if (!t->pixels) {
+		GBLOG("Unable to allocate texture: %m");
+		return errno;
+	}
+
 	t->texture = SDL_CreateTexture(
 		r,
 		SDL_PIXELFORMAT_RGB888,
@@ -48,6 +54,9 @@ static int texture_init(struct texture *t, struct SDL_Renderer *r)
 
 static void texture_free(struct texture *t)
 {
+	free(t->pixels);
+	t->pixels = NULL;
+
 	if (t->texture)
 		SDL_DestroyTexture(t->texture);
 }
@@ -79,13 +88,15 @@ static int view_init(struct view *v)
 		return 1;
 	}
 
-	return texture_init(&v->screen, v->renderer)
-	    || texture_init(&v->alt_screen, v->renderer)
-	    || texture_init(&v->dbg_background, v->renderer)
-	    || texture_init(&v->dbg_window, v->renderer)
-	    || texture_init(&v->dbg_palettes, v->renderer)
-	    || texture_init(&v->dbg_vram, v->renderer)
-	    || texture_init(&v->dbg_vram_gbc, v->renderer);
+	struct gameboy *gb;
+
+	return texture_init(&v->screen, v->renderer, sizeof(*gb->screen))
+	    || texture_init(&v->alt_screen, v->renderer, sizeof(*gb->screen))
+	    || texture_init(&v->dbg_background, v->renderer, sizeof(*gb->dbg_background))
+	    || texture_init(&v->dbg_window, v->renderer, sizeof(*gb->dbg_window))
+	    || texture_init(&v->dbg_palettes, v->renderer, sizeof(*gb->dbg_palettes))
+	    || texture_init(&v->dbg_vram, v->renderer, sizeof(*gb->dbg_vram))
+	    || texture_init(&v->dbg_vram_gbc, v->renderer, sizeof(*gb->dbg_vram_gbc));
 }
 
 static void view_free(struct view *v)
@@ -350,31 +361,24 @@ int egbe_main(int argc, char **argv)
 
 	struct view view = {
 		.screen = {
-			.pixels = host.gb->screen,
 			.rect = { .x = 232, .y = 264, .w = 160, .h = 144, },
 		},
 		.alt_screen = {
-			.pixels = guest.gb ? guest.gb->screen : NULL,
 			.rect = { .x = 396, .y = 264, .w = 160, .h = 144, },
 		},
 		.dbg_background = {
-			.pixels = host.gb->dbg_background,
 			.rect = { .x = 136, .y =   4, .w = 256, .h = 256, },
 		},
 		.dbg_window = {
-			.pixels = host.gb->dbg_window,
 			.rect = { .x = 396, .y =   4, .w = 256, .h = 256, },
 		},
 		.dbg_palettes = {
-			.pixels = host.gb->dbg_palettes,
 			.rect = { .x = 136, .y = 264, .w =  86, .h = 82, },
 		},
 		.dbg_vram = {
-			.pixels = host.gb->dbg_vram,
 			.rect = { .x =   4, .y =   4, .w = 128, .h = 192, },
 		},
 		.dbg_vram_gbc = {
-			.pixels = host.gb->dbg_vram_gbc,
 			.rect = { .x =   4, .y = 200, .w = 128, .h = 192, },
 		},
 	};
@@ -384,6 +388,25 @@ int egbe_main(int argc, char **argv)
 	} else {
 		host.gb->on_vblank.callback = on_vblank;
 		host.gb->on_vblank.context = &view;
+
+		host.gb->screen = (void *)view.screen.pixels;
+		host.gb->dbg_background = (void *)view.dbg_background.pixels;
+		host.gb->dbg_window = (void *)view.dbg_window.pixels;
+		host.gb->dbg_palettes = (void *)view.dbg_palettes.pixels;
+		host.gb->dbg_vram = (void *)view.dbg_vram.pixels;
+		host.gb->dbg_vram_gbc = (void *)view.dbg_vram_gbc.pixels;
+
+		for (int y = 0; y < 82; ++y) {
+			for (int x = 0; x < 86; ++x) {
+				if ((x + y) % 2)
+					(*host.gb->dbg_palettes)[y][x] = 0x00CCCCCC;
+				else
+					(*host.gb->dbg_palettes)[y][x] = 0x00DDDDDD;
+			}
+		}
+
+		if (guest.gb)
+			guest.gb->screen = (void *)view.alt_screen.pixels;
 	}
 
 	struct audio audio = {

@@ -41,89 +41,99 @@ static void render_debug(struct gameboy *gb)
 	struct gameboy_background_cell *cell;
 	struct gameboy_tile *tile;
 
-	for (int ty = 0; ty < 24; ++ty) {
-		for (int tx = 0; tx < 16; ++tx) {
-			tile = &gb->tiles[0][(16 * ty) + tx];
+	if (gb->dbg_vram) {
+		for (int ty = 0; ty < 24; ++ty) {
+			for (int tx = 0; tx < 16; ++tx) {
+				tile = &gb->tiles[0][(16 * ty) + tx];
 
-			for (int dy = 0; dy < 8; ++dy) {
-				for (int dx = 0; dx < 8; ++dx) {
-					int y = (8 * ty) + dy;
-					int x = (8 * tx) + dx;
-					int color = tile->pixels[dy][dx];
+				for (int dy = 0; dy < 8; ++dy) {
+					for (int dx = 0; dx < 8; ++dx) {
+						int y = (8 * ty) + dy;
+						int x = (8 * tx) + dx;
+						int color = tile->pixels[dy][dx];
 
-					gb->dbg_vram[y][x] = monochrome.colors[color];
+						(*gb->dbg_vram)[y][x] = monochrome.colors[color];
+					}
 				}
 			}
 		}
 	}
 
-	for (int ty = 0; ty < 24; ++ty) {
-		for (int tx = 0; tx < 16; ++tx) {
-			tile = &gb->tiles[1][(16 * ty) + tx];
+	if (gb->dbg_vram_gbc) {
+		for (int ty = 0; ty < 24; ++ty) {
+			for (int tx = 0; tx < 16; ++tx) {
+				tile = &gb->tiles[1][(16 * ty) + tx];
 
-			for (int dy = 0; dy < 8; ++dy) {
-				for (int dx = 0; dx < 8; ++dx) {
-					int y = (8 * ty) + dy;
-					int x = (8 * tx) + dx;
-					int color = tile->pixels[dy][dx];
+				for (int dy = 0; dy < 8; ++dy) {
+					for (int dx = 0; dx < 8; ++dx) {
+						int y = (8 * ty) + dy;
+						int x = (8 * tx) + dx;
+						int color = tile->pixels[dy][dx];
 
-					gb->dbg_vram_gbc[y][x] = monochrome.colors[color];
+						(*gb->dbg_vram_gbc)[y][x] = monochrome.colors[color];
+					}
 				}
 			}
 		}
 	}
 
-	for (int ty = 0; ty < 32; ++ty) {
-		for (int tx = 0; tx < 32; ++tx) {
-			cell = &gb->tilemaps[gb->background_tilemap].cells[ty][tx];
+	if (gb->dbg_background) {
+		for (int ty = 0; ty < 32; ++ty) {
+			for (int tx = 0; tx < 32; ++tx) {
+				cell = &gb->tilemaps[gb->background_tilemap].cells[ty][tx];
 
-			for (int dy = 0; dy < 8; ++dy) {
-				for (int dx = 0; dx < 8; ++dx) {
-					int y = (8 * ty) + dy;
-					int x = (8 * tx) + dx;
-					int color = cell->tile->pixels[dy][dx];
+				for (int dy = 0; dy < 8; ++dy) {
+					for (int dx = 0; dx < 8; ++dx) {
+						int y = (8 * ty) + dy;
+						int x = (8 * tx) + dx;
+						int color = cell->tile->pixels[dy][dx];
 
-					gb->dbg_background[y][x] = cell->palette->colors[color];
+						(*gb->dbg_background)[y][x] = cell->palette->colors[color];
+					}
 				}
 			}
 		}
 	}
 
-	for (int ty = 0; ty < 32; ++ty) {
-		for (int tx = 0; tx < 32; ++tx) {
-			cell = &gb->tilemaps[gb->window_tilemap].cells[ty][tx];
+	if (gb->dbg_window) {
+		for (int ty = 0; ty < 32; ++ty) {
+			for (int tx = 0; tx < 32; ++tx) {
+				cell = &gb->tilemaps[gb->window_tilemap].cells[ty][tx];
 
-			for (int dy = 0; dy < 8; ++dy) {
-				for (int dx = 0; dx < 8; ++dx) {
-					int y = (8 * ty) + dy;
-					int x = (8 * tx) + dx;
-					int color = cell->tile->pixels[dy][dx];
+				for (int dy = 0; dy < 8; ++dy) {
+					for (int dx = 0; dx < 8; ++dx) {
+						int y = (8 * ty) + dy;
+						int x = (8 * tx) + dx;
+						int color = cell->tile->pixels[dy][dx];
 
-					gb->dbg_window[y][x] = cell->palette->colors[color];
+						(*gb->dbg_window)[y][x] = cell->palette->colors[color];
+					}
 				}
 			}
 		}
 	}
 
-	for (int i = 0; i < 8; ++i) {
-		for (int j = 0; j < 4; ++j) {
-			int color;
+	if (gb->dbg_palettes) {
+		for (int i = 0; i < 8; ++i) {
+			for (int j = 0; j < 4; ++j) {
+				int color;
 
-			color = gb->bgp[i].colors[j];
-			for (int dy = 0; dy < 8; ++dy) {
-				for (int dx = 0; dx < 8; ++dx) {
-					int y = (i * 10) + dy + 2;
-					int x = (j * 10) + dx + 2;
-					gb->dbg_palettes[y][x] = color;
+				color = gb->bgp[i].colors[j];
+				for (int dy = 0; dy < 8; ++dy) {
+					for (int dx = 0; dx < 8; ++dx) {
+						int y = (i * 10) + dy + 2;
+						int x = (j * 10) + dx + 2;
+						(*gb->dbg_palettes)[y][x] = color;
+					}
 				}
-			}
 
-			color = gb->obp[i].colors[j];
-			for (int dy = 0; dy < 8; ++dy) {
-				for (int dx = 0; dx < 8; ++dx) {
-					int y = (i * 10) + dy + 2;
-					int x = (j * 10) + dx + 46;
-					gb->dbg_palettes[y][x] = color;
+				color = gb->obp[i].colors[j];
+				for (int dy = 0; dy < 8; ++dy) {
+					for (int dx = 0; dx < 8; ++dx) {
+						int y = (i * 10) + dy + 2;
+						int x = (j * 10) + dx + 46;
+						(*gb->dbg_palettes)[y][x] = color;
+					}
 				}
 			}
 		}
@@ -143,6 +153,9 @@ static int sprite_qsort(const void *p1, const void *p2)
 
 static void render_scanline(struct gameboy *gb)
 {
+	if (!gb->screen)
+		return;
+
 	uint8_t line[160];
 	int y = gb->scanline;
 	uint8_t dy;
@@ -168,7 +181,7 @@ static void render_scanline(struct gameboy *gb)
 
 		uint8_t code = cell->tile->pixels[dy % 8][dx % 8];
 		line[x] = code;
-		gb->screen[y][x] = cell->palette->colors[code];
+		(*gb->screen)[y][x] = cell->palette->colors[code];
 	}
 
 	dy = y - gb->wy;
@@ -180,7 +193,7 @@ static void render_scanline(struct gameboy *gb)
 
 		uint8_t code = cell->tile->pixels[dy % 8][dx % 8];
 		line[x] = code;
-		gb->screen[y][x] = cell->palette->colors[code];
+		(*gb->screen)[y][x] = cell->palette->colors[code];
 	}
 
 	for (int i = 0; i < 40; ++i) {
@@ -213,7 +226,7 @@ static void render_scanline(struct gameboy *gb)
 				continue;
 
 			line[dx] = code;
-			gb->screen[y][dx] = spr->palette->colors[code];
+			(*gb->screen)[y][dx] = spr->palette->colors[code];
 		}
 
 		// TODO: Stop after 10th sprite per scanline
@@ -246,15 +259,6 @@ void lcd_init(struct gameboy *gb)
 
 	gb->lcd_enabled = true;
 	lcd_disable(gb);
-
-	for (int y = 0; y < 82; ++y) {
-		for (int x = 0; x < 86; ++x) {
-			if ((x + y) % 2)
-				gb->dbg_palettes[y][x] = 0x00CCCCCC;
-			else
-				gb->dbg_palettes[y][x] = 0x00DDDDDD;
-		}
-	}
 }
 
 void lcd_sync(struct gameboy *gb)
