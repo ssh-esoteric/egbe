@@ -3,6 +3,7 @@
 #include "common.h"
 #include <time.h> // Required before ruby.h to declare struct timespec
 #include <ruby.h>
+#include <ruby/encoding.h>
 
 VALUE mEGBE;
 VALUE cGB;
@@ -304,14 +305,16 @@ static void debugger_init(void)
 	// GB_ATTR("Wramx", wramx);
 	// uint8_t hram[0x007F]);
 
+	rb_enc_find_index("encdb");
+	rb_require("rubygems");
 	rb_require("irb");
 	rb_eval_string("$binding = binding");
 
 	rb_eval_string(
 		"begin\n"
 		"	require_relative 'debugger.rb'\n"
-		"rescue LoadError => e\n"
-		"	puts e.message\n"
+		"rescue => e\n"
+		"	puts [e.message, *e.backtrace].join(\"\\n\\t\")\n"
 		"end"
 	);
 }
@@ -331,7 +334,13 @@ void egbe_gameboy_debug(struct egbe_gameboy *egb)
 		rb_eval_string("$binding.eval 'gb = $gb' ");
 	}
 
-	rb_eval_string("$binding.irb");
+	rb_eval_string(
+		"begin\n"
+		"	$binding.irb\n"
+		"rescue => e\n"
+		"	puts [e.message, *e.backtrace].join(\"\\n\\t\")\n"
+		"end"
+	);
 }
 
 int main(int argc, char **argv)
