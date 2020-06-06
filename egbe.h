@@ -40,7 +40,7 @@ struct egbe_gameboy {
 void egbe_gameboy_init(struct egbe_gameboy *self, char *cart_path, char *boot_path);
 void egbe_gameboy_cleanup(struct egbe_gameboy *self);
 
-int egbe_gameboy_init_curl(struct egbe_gameboy *self, char *base_url);
+int egbe_gameboy_init_curl(struct egbe_gameboy *self, char *api_url);
 
 void egbe_gameboy_set_savestate_num(struct egbe_gameboy *self, char n);
 

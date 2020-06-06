@@ -14,7 +14,7 @@ static size_t egbe_curl_initialized = 0;
 struct egbe_curl_context {
 	CURL *handle;
 
-	char base_url[MAX_URL];
+	char api_url[MAX_URL];
 };
 
 struct egbe_msg {
@@ -63,6 +63,7 @@ static size_t write_cb(void *contents, size_t size, size_t nmemb, void *context)
 }
 
 static long perform_curl(struct egbe_curl_context *cc,
+                         enum egbe_link_status status,
                          struct egbe_msg *req, struct egbe_msg *rsp)
 {
 	char buf[MAX_BODY];
@@ -80,11 +81,26 @@ static long perform_curl(struct egbe_curl_context *cc,
 	curl_easy_setopt(cc->handle, CURLOPT_WRITEFUNCTION, write_cb);
 	curl_easy_setopt(cc->handle, CURLOPT_WRITEDATA, buf);
 
+	struct curl_slist *headers = NULL;
+	switch (status) {
+	case EGBE_LINK_DISCONNECTED:
+		headers = curl_slist_append(headers, "Accept: application/prs.egbe.msg-v0.sync");
+		break;
+	case EGBE_LINK_GUEST:
+		headers = curl_slist_append(headers, "Accept: application/prs.egbe.msg-v0.guest");
+		break;
+	case EGBE_LINK_HOST:
+		headers = curl_slist_append(headers, "Accept: application/prs.egbe.msg-v0.host");
+		break;
+	}
+	curl_easy_setopt(cc->handle, CURLOPT_HTTPHEADER, headers);
+
 	CURLcode rc = curl_easy_perform(cc->handle);
 	if (rc) {
 		GBLOG("Error making curl request: %s", curl_easy_strerror(rc));
 		strcpy(buf, "d 0 0");
 	}
+	curl_slist_free_all(headers);
 
 	long code;
 	curl_easy_getinfo(cc->handle, CURLINFO_RESPONSE_CODE, &code);
@@ -110,12 +126,12 @@ static void tick_curl(struct egbe_gameboy *self)
 		req.offset = self->till - self->start;
 		req.xfer = self->gb->sb;
 
-		perform_curl(cc, &req, &rsp);
+		perform_curl(cc, self->status, &req, &rsp);
 		if (check_for_disconnect(self, &rsp))
 			return;
 
 		if (self->xfer_pending) {
-			perform_curl(cc, NULL, &rsp);
+			perform_curl(cc, self->status, NULL, &rsp);
 			if (check_for_disconnect(self, &rsp))
 				return;
 
@@ -126,7 +142,7 @@ static void tick_curl(struct egbe_gameboy *self)
 		break;
 
 	case EGBE_LINK_GUEST:
-		perform_curl(cc, NULL, &rsp);
+		perform_curl(cc, self->status, NULL, &rsp);
 		if (check_for_disconnect(self, &rsp))
 			return;
 
@@ -141,7 +157,7 @@ static void tick_curl(struct egbe_gameboy *self)
 			req.offset = rsp.offset;
 			req.xfer = self->gb->sb;
 
-			perform_curl(cc, &req, &rsp);
+			perform_curl(cc, self->status, &req, &rsp);
 			if (check_for_disconnect(self, &rsp))
 				return;
 		}
@@ -175,22 +191,17 @@ static int connect_curl(struct egbe_gameboy *self)
 	}
 
 	struct egbe_msg req, rsp;
-	char buf[MAX_URL * 2];
-	char *url;
 
 	// TODO: Use actual randomness; this is probably good enough for now
 	long registration_code = (long)self->gb ^ (long)cc;
 
-	url = strcpy(buf, cc->base_url);
-	strcat(url, "/api?role=sync");
-
-	curl_easy_setopt(cc->handle, CURLOPT_URL, url);
+	curl_easy_setopt(cc->handle, CURLOPT_URL, cc->api_url);
 
 	req.code = 'c';
 	req.offset = registration_code;
 	req.xfer = 0;
 
-	perform_curl(cc, &req, &rsp);
+	perform_curl(cc, self->status, &req, &rsp);
 	if (check_for_disconnect(self, &rsp))
 		return 1;
 
@@ -199,10 +210,8 @@ static int connect_curl(struct egbe_gameboy *self)
 		return 1;
 	}
 
-	url = strcpy(buf, cc->base_url);
 	if (rsp.offset == registration_code) {
 		GBLOG("Registered as a host");
-		strcat(url, "/api?role=host");
 
 		self->status = EGBE_LINK_HOST;
 		self->start = self->gb->cycles;
@@ -213,13 +222,11 @@ static int connect_curl(struct egbe_gameboy *self)
 
 	} else {
 		GBLOG("Registered as a guest");
-		strcat(url, "/api?role=guest");
 
 		self->status = EGBE_LINK_GUEST;
 		self->start = self->gb->cycles;
 		self->till = self->gb->cycles;
 	}
-	curl_easy_setopt(cc->handle, CURLOPT_URL, url);
 
 	return 0;
 }
@@ -237,10 +244,10 @@ static void cleanup_curl(struct egbe_gameboy *self)
 		curl_global_cleanup();
 }
 
-int egbe_gameboy_init_curl(struct egbe_gameboy *self, char *base_url)
+int egbe_gameboy_init_curl(struct egbe_gameboy *self, char *api_url)
 {
-	if (!base_url) {
-		GBLOG("Base URL is required to initialize curl handler");
+	if (!api_url) {
+		GBLOG("API URL is required to initialize curl handler");
 		return EINVAL;
 	}
 
@@ -252,9 +259,9 @@ int egbe_gameboy_init_curl(struct egbe_gameboy *self, char *base_url)
 		}
 	}
 
-	size_t len = strnlen(base_url, MAX_URL);
+	size_t len = strnlen(api_url, MAX_URL);
 	if (len >= MAX_URL) {
-		GBLOG("Base URL is too large: %ld bytes", len);
+		GBLOG("API URL is too large: %ld bytes", len);
 		return EINVAL;
 	}
 
@@ -263,7 +270,7 @@ int egbe_gameboy_init_curl(struct egbe_gameboy *self, char *base_url)
 		GBLOG("Failed to allocate curl context");
 		return ENOMEM;
 	}
-	strncpy(cc->base_url, base_url, len);
+	strncpy(cc->api_url, api_url, len);
 
 	cc->handle = curl_easy_init();
 	if (!cc->handle) {
