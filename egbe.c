@@ -301,11 +301,6 @@ void egbe_gameboy_set_savestate_num(struct egbe_gameboy *self, char n)
 
 int egbe_main(int argc, char **argv)
 {
-	if (argc < 2) {
-		puts("Usage: egbe <ROM.gb> [<BOOT.bin>] [<SRAM.sram>]");
-		return 0;
-	}
-
 	if (SDL_Init(SDL_INIT_EVERYTHING)) {
 		GBLOG("Failed to initialize SDL: %s", SDL_GetError());
 		return 1;
@@ -347,14 +342,30 @@ int egbe_main(int argc, char **argv)
 		GBLOG("Unknown SERIAL value: %s", serial);
 	}
 
-	char *host_cart = getenv("CART1") ?: getenv("CART") ?: argv[1];
-	char *host_boot = getenv("BOOT1") ?: getenv("BOOT") ?: argv[2];
+	char *host_cart = getenv("CART1") ?: getenv("CART");
+	char *host_boot = getenv("BOOT1") ?: getenv("BOOT");
+
+	if (!host_cart && argc >= 2)
+		host_cart = argv[1];
+	if (!host_cart)
+		GBLOG("Warning: no ROM file provided");
+
+	if (!host_boot && argc >= 3)
+		host_boot = argv[2];
+	if (!host_boot)
+		GBLOG("Warning: no boot ROM file provided");
 
 	egbe_gameboy_init(&host, host_cart, host_boot);
 
 	if (guest.gb) {
 		char *guest_cart = getenv("CART2") ?: host_cart;
 		char *guest_boot = getenv("BOOT2") ?: host_boot;
+
+		if (!guest_cart)
+			GBLOG("Warning: no ROM file provided to guest");
+
+		if (!guest_boot)
+			GBLOG("Warning: no boot ROM file provided to guest");
 
 		egbe_gameboy_init(&guest, guest_cart, guest_boot);
 	}
