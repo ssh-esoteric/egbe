@@ -230,7 +230,7 @@ static void local_serial_interrupt(struct gameboy *gb, void *context)
 
 static void local_serial_tick(struct egbe_gameboy *host)
 {
-	struct egbe_gameboy *guest = host->context;
+	struct egbe_gameboy *guest = host->link_context;
 
 	// Note that host->till could be set early from local_serial_interrupt
 	host->till = host->gb->cycles + EGBE_EVENT_CYCLES;
@@ -250,6 +250,10 @@ static void local_serial_tick(struct egbe_gameboy *host)
 
 void egbe_gameboy_init(struct egbe_gameboy *self, char *cart_path, char *boot_path)
 {
+	self->link_status = EGBE_LINK_DISCONNECTED;
+	self->start = 0L;
+	self->till = 0L;
+
 	self->cart_path = cart_path ? strdup(cart_path) : NULL;
 	self->boot_path = boot_path ? strdup(boot_path) : NULL;
 	self->sram_path = NULL;
@@ -284,8 +288,8 @@ void egbe_gameboy_cleanup(struct egbe_gameboy *self)
 	if (self->gb)
 		gameboy_free(self->gb);
 
-	if (self->cleanup)
-		self->cleanup(self);
+	if (self->link_cleanup)
+		self->link_cleanup(self);
 
 	free(self->boot_path);
 	free(self->cart_path);
@@ -297,6 +301,25 @@ void egbe_gameboy_set_savestate_num(struct egbe_gameboy *self, char n)
 {
 	self->state_num = n;
 	*self->state_path_end = n + '0';
+}
+
+static void link_connect(struct egbe_gameboy *self)
+{
+	if (self->link_status & (EGBE_LINK_HOST | EGBE_LINK_GUEST)) {
+		GBLOG("GB already registered as a %s",
+		      self->link_status & EGBE_LINK_HOST ? "host" : "guest");
+		return;
+	}
+
+	if (!self->link_connect) {
+		GBLOG("No link cable handler configured");
+		return;
+	}
+
+	GBLOG("Attempting to start link cable");
+	int rc = self->link_connect(self);
+	if (rc)
+		GBLOG("Failed to connect link cable: %d", rc);
 }
 
 int egbe_main(int argc, char **argv)
@@ -331,7 +354,7 @@ int egbe_main(int argc, char **argv)
 
 		// TODO: host.status and guest.status should be used somewhere
 		host.tick = local_serial_tick;
-		host.context = &guest;
+		host.link_context = &guest;
 
 		host.gb->on_serial_start.callback = local_serial_interrupt;
 		host.gb->on_serial_start.context = &host;
@@ -459,14 +482,7 @@ int egbe_main(int argc, char **argv)
 			case SDL_KEYDOWN:
 				switch (event.key.keysym.sym) {
 				case SDLK_l:
-					if (focus->connect) {
-						GBLOG("Attempting to start link cable");
-						int rc = focus->connect(focus);
-						if (rc)
-							GBLOG("Failed to connect: %d", rc);
-					} else {
-						GBLOG("No link cable handler configured");
-					}
+					link_connect(focus);
 					break;
 				case SDLK_q:
 				case SDLK_ESCAPE:

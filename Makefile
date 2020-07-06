@@ -26,8 +26,8 @@ LIBS = -lSDL2
 
 ifdef CURL
 	EGBE_SRCS += egbe_curl.c
-	CFLAGS += $(shell pkg-config --cflags libcurl)
-	LIBS += $(shell pkg-config --libs libcurl)
+	CFLAGS += $(shell pkg-config --cflags libcurl json-c)
+	LIBS += $(shell pkg-config --libs libcurl json-c)
 else
 	EGBE_SRCS += egbe_curl_stub.c
 endif

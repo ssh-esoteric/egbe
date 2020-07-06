@@ -8,10 +8,13 @@
 // Also works well with games that sync every other VBlank (~140448)
 #define EGBE_EVENT_CYCLES 150000
 
-enum egbe_link_status {
+enum egbe_link_flags {
 	EGBE_LINK_DISCONNECTED = 0,
-	EGBE_LINK_GUEST,
-	EGBE_LINK_HOST,
+	EGBE_LINK_WAITING      = (1 << 0),
+	EGBE_LINK_GUEST        = (1 << 1),
+	EGBE_LINK_HOST         = (1 << 2),
+
+	EGBE_LINK_MASK = EGBE_LINK_WAITING | EGBE_LINK_HOST | EGBE_LINK_GUEST,
 };
 
 struct egbe_gameboy {
@@ -27,14 +30,15 @@ struct egbe_gameboy {
 
 	long start;
 	long till;
-	enum egbe_link_status status;
 	bool xfer_pending;
 
-	void (*cleanup)(struct egbe_gameboy *self);
-	int (*connect)(struct egbe_gameboy *self);
 	void (*tick)(struct egbe_gameboy *self);
 
-	void *context;
+	int link_status;
+	void *link_context;
+	void (*link_cleanup)(struct egbe_gameboy *self);
+	int (*link_connect)(struct egbe_gameboy *self);
+
 };
 
 void egbe_gameboy_init(struct egbe_gameboy *self, char *cart_path, char *boot_path);

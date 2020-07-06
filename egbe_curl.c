@@ -3,7 +3,9 @@
 #include "egbe.h"
 #include "common.h"
 #include <curl/curl.h>
+#include <json-c/json.h>
 #include <sys/param.h>
+#include <sys/random.h>
 #include <string.h>
 
 #define MAX_URL 1024
@@ -11,46 +13,51 @@
 
 static size_t egbe_curl_initialized = 0;
 
+struct link_peer {
+	long id;
+	long cycles;
+	int serial;
+	int infrared;
+};
+
+struct link_state {
+	struct link_peer host;
+	struct link_peer guest;
+};
+
 struct egbe_curl_context {
 	CURL *handle;
-
 	char api_url[MAX_URL];
+
+	long registration_code;
+	struct link_state link_state;
 };
 
-struct egbe_msg {
-	long offset;
-	char code;
-	uint8_t xfer;
-};
-
-static int parse_msg(struct egbe_msg *msg, char *buf)
+static int parse_json_into_state(struct json_object *body, struct link_state *state)
 {
-	int xfer;
-	int rc = sscanf(buf, "%c %ld %d", &msg->code, &msg->offset, &xfer);
-	msg->xfer = xfer;
+	struct json_object *host = json_object_object_get(body, "host");
+	if (!json_object_is_type(host, json_type_object)) {
+		GBLOG("Couldn't find host in response");
+		return 1;
+	}
 
-	return rc;
-}
+	struct json_object *guest = json_object_object_get(body, "guest");
+	if (!json_object_is_type(guest, json_type_object)) {
+		GBLOG("Couldn't find guest in response");
+		return 1;
+	}
 
-static void render_msg(struct egbe_msg *msg, char *buf)
-{
-	sprintf(buf, "%c %ld %d", msg->code, msg->offset, msg->xfer);
-}
+	state->host.id       = json_object_get_int64(json_object_object_get(host, "id"));
+	state->host.cycles   = json_object_get_int64(json_object_object_get(host, "cycles"));
+	state->host.serial   = json_object_get_int64(json_object_object_get(host, "serial"));
+	state->host.infrared = json_object_get_int64(json_object_object_get(host, "infrared"));
 
-static bool check_for_disconnect(struct egbe_gameboy *self, struct egbe_msg *msg)
-{
-	if (msg->code != 'd')
-		return false;
+	state->guest.id       = json_object_get_int64(json_object_object_get(guest, "id"));
+	state->guest.cycles   = json_object_get_int64(json_object_object_get(guest, "cycles"));
+	state->guest.serial   = json_object_get_int64(json_object_object_get(guest, "serial"));
+	state->guest.infrared = json_object_get_int64(json_object_object_get(guest, "infrared"));
 
-	GBLOG("Curl client disconnected");
-	self->status = EGBE_LINK_DISCONNECTED;
-	self->start = 0;
-	self->till = self->gb->cycles;
-
-	self->gb->on_serial_start.callback = NULL;
-	self->gb->on_serial_start.context = NULL;
-
-	return true;
+	return 0;
 }
 
 static size_t write_cb(void *contents, size_t size, size_t nmemb, void *context)
@@ -62,113 +69,113 @@ static size_t write_cb(void *contents, size_t size, size_t nmemb, void *context)
 	return size;
 }
 
-static long perform_curl(struct egbe_curl_context *cc,
-                         enum egbe_link_status status,
-                         struct egbe_msg *req, struct egbe_msg *rsp)
+static int http_request(struct egbe_gameboy *self, const char *req_body)
 {
-	char buf[MAX_BODY];
+	struct egbe_curl_context *cc = self->link_context;
+	char buf[MAX_BODY] = { 0 };
 
-	if (req) {
-		render_msg(req, buf);
-		curl_easy_setopt(cc->handle, CURLOPT_CUSTOMREQUEST, "PUT");
-		curl_easy_setopt(cc->handle, CURLOPT_POSTFIELDS, buf);
+	curl_easy_setopt(cc->handle, CURLOPT_URL, cc->api_url);
+
+	struct curl_slist *headers = NULL;
+	headers = curl_slist_append(headers, "Accept: application/json");
+
+	if (req_body) {
+		curl_easy_setopt(cc->handle, CURLOPT_CUSTOMREQUEST, "PATCH");
+		curl_easy_setopt(cc->handle, CURLOPT_POSTFIELDS, req_body);
+
+		headers = curl_slist_append(headers, "Content-Type: application/json");
 	} else {
 		curl_easy_setopt(cc->handle, CURLOPT_CUSTOMREQUEST, "GET");
 		curl_easy_setopt(cc->handle, CURLOPT_POSTFIELDS, "");
 	}
 
+	curl_easy_setopt(cc->handle, CURLOPT_HTTPHEADER, headers);
 	curl_easy_setopt(cc->handle, CURLOPT_TIMEOUT, 10);
 	curl_easy_setopt(cc->handle, CURLOPT_WRITEFUNCTION, write_cb);
 	curl_easy_setopt(cc->handle, CURLOPT_WRITEDATA, buf);
 
-	struct curl_slist *headers = NULL;
-	switch (status) {
-	case EGBE_LINK_DISCONNECTED:
-		headers = curl_slist_append(headers, "Accept: application/prs.egbe.msg-v0.sync");
-		break;
-	case EGBE_LINK_GUEST:
-		headers = curl_slist_append(headers, "Accept: application/prs.egbe.msg-v0.guest");
-		break;
-	case EGBE_LINK_HOST:
-		headers = curl_slist_append(headers, "Accept: application/prs.egbe.msg-v0.host");
-		break;
-	}
-	curl_easy_setopt(cc->handle, CURLOPT_HTTPHEADER, headers);
-
 	CURLcode rc = curl_easy_perform(cc->handle);
 	if (rc) {
 		GBLOG("Error making curl request: %s", curl_easy_strerror(rc));
-		strcpy(buf, "d 0 0");
 	}
 	curl_slist_free_all(headers);
 
 	long code;
 	curl_easy_getinfo(cc->handle, CURLINFO_RESPONSE_CODE, &code);
 
-	if (rsp)
-		parse_msg(rsp, buf);
+	if (code >= 200 && code <= 299) {
+		struct json_object *rsp_body = json_tokener_parse(buf);
+		if (rsp_body) {
+			parse_json_into_state(rsp_body, &cc->link_state);
+			json_object_put(rsp_body);
+		}
 
-	return rc ? -1 : code;
+		return 0;
+	} else {
+		GBLOG("Unexpected HTTP response code: %ld", code);
+		return 1;
+	}
 }
 
-static void tick_curl(struct egbe_gameboy *self)
+static int api_register(struct egbe_gameboy *self, int link_flags)
 {
-	struct egbe_curl_context *cc = self->context;
-	struct egbe_msg req, rsp;
+	struct egbe_curl_context *cc = self->link_context;
+	long my_id = cc->registration_code;
 
-	switch (self->status) {
-	case EGBE_LINK_HOST:
-		self->till = self->gb->cycles + EGBE_EVENT_CYCLES;
-		while (self->gb->cycles < self->till)
-			gameboy_tick(self->gb);
+	int rc = http_request(self, NULL);
+	if (rc)
+		return rc;
 
-		req.code = self->xfer_pending ? 'x' : 'i';
-		req.offset = self->till - self->start;
-		req.xfer = self->gb->sb;
+	link_flags &= (EGBE_LINK_HOST | EGBE_LINK_GUEST);
 
-		perform_curl(cc, self->status, &req, &rsp);
-		if (check_for_disconnect(self, &rsp))
-			return;
+	if (cc->link_state.host.id)
+		link_flags &= ~EGBE_LINK_HOST;
 
-		if (self->xfer_pending) {
-			perform_curl(cc, self->status, NULL, &rsp);
-			if (check_for_disconnect(self, &rsp))
-				return;
+	if (cc->link_state.guest.id)
+		link_flags &= ~EGBE_LINK_GUEST;
 
-			gameboy_start_serial(self->gb, rsp.xfer);
+	if (!link_flags) {
+		GBLOG("Failed to register: Link is already full");
+		return 1;
+	}
 
-			self->xfer_pending = false;
-		}
-		break;
+	struct json_object *body = json_object_new_object();
 
-	case EGBE_LINK_GUEST:
-		perform_curl(cc, self->status, NULL, &rsp);
-		if (check_for_disconnect(self, &rsp))
-			return;
+	// Note: The server API allows us to send a PATCH with both host and
+	//       guest fields populated when registering, which indicates that
+	//       we're fine being either peer.
+	if (link_flags & EGBE_LINK_HOST) {
+		struct json_object *peer = json_object_new_object();
+		json_object_object_add(peer, "id", json_object_new_int64(my_id));
 
-		self->till = rsp.offset + self->start;
-		while (self->gb->cycles < self->till)
-			gameboy_tick(self->gb);
+		json_object_object_add(body, "host", peer);
+	}
+	if (link_flags & EGBE_LINK_GUEST) {
+		struct json_object *peer = json_object_new_object();
+		json_object_object_add(peer, "id", json_object_new_int64(my_id));
 
-		if (rsp.code == 'x') {
-			gameboy_start_serial(self->gb, rsp.xfer);
+		json_object_object_add(body, "guest", peer);
+	}
 
-			req.code = 'x';
-			req.offset = rsp.offset;
-			req.xfer = self->gb->sb;
+	const char *json = json_object_to_json_string_ext(body, JSON_C_TO_STRING_PLAIN);
+	http_request(self, json);
+	json_object_put(body);
 
-			perform_curl(cc, self->status, &req, &rsp);
-			if (check_for_disconnect(self, &rsp))
-				return;
-		}
-		break;
+	if (link_flags & EGBE_LINK_HOST && cc->link_state.host.id == my_id) {
+		GBLOG("Registered as a host");
 
-	case EGBE_LINK_DISCONNECTED:
-	default:
-		self->till = self->gb->cycles + EGBE_EVENT_CYCLES;
-		while (self->gb->cycles < self->till)
-			gameboy_tick(self->gb);
-		break;
+		self->link_status = EGBE_LINK_HOST;
+		return 0;
+	}
+	else if (link_flags & EGBE_LINK_GUEST && cc->link_state.guest.id == my_id) {
+		GBLOG("Registered as a guest");
+
+		self->link_status = EGBE_LINK_GUEST;
+		return 0;
+	}
+	else {
+		GBLOG("Failed to register");
+		return 1;
 	}
 }
 
@@ -180,60 +187,24 @@ static void interrupt_serial_curl(struct gameboy *gb, void *context)
 	self->xfer_pending = true;
 }
 
-static int connect_curl(struct egbe_gameboy *self)
+static int link_connect(struct egbe_gameboy *self)
 {
-	struct egbe_curl_context *cc = self->context;
+	struct egbe_curl_context *cc = self->link_context;
 
-	if (self->status) {
-		GBLOG("GB already registered as a %s",
-		      self->status == EGBE_LINK_HOST ? "host" : "guest");
-		return 0;
-	}
+	// TODO: The registration type could be configurable
+	int rc = api_register(self, EGBE_LINK_HOST | EGBE_LINK_GUEST);
+	if (rc)
+		return rc;
 
-	struct egbe_msg req, rsp;
-
-	// TODO: Use actual randomness; this is probably good enough for now
-	long registration_code = (long)self->gb ^ (long)cc;
-
-	curl_easy_setopt(cc->handle, CURLOPT_URL, cc->api_url);
-
-	req.code = 'c';
-	req.offset = registration_code;
-	req.xfer = 0;
-
-	perform_curl(cc, self->status, &req, &rsp);
-	if (check_for_disconnect(self, &rsp))
-		return 1;
-
-	if (rsp.code != 'c') {
-		GBLOG("Bad response code while registering GB: %c", rsp.code);
-		return 1;
-	}
-
-	if (rsp.offset == registration_code) {
-		GBLOG("Registered as a host");
-
-		self->status = EGBE_LINK_HOST;
-		self->start = self->gb->cycles;
-		self->till = self->gb->cycles;
-
-		self->gb->on_serial_start.callback = interrupt_serial_curl;
-		self->gb->on_serial_start.context = self;
-
-	} else {
-		GBLOG("Registered as a guest");
-
-		self->status = EGBE_LINK_GUEST;
-		self->start = self->gb->cycles;
-		self->till = self->gb->cycles;
-	}
+	self->start = self->gb->cycles;
+	self->till = self->gb->cycles;
 
 	return 0;
 }
 
-static void cleanup_curl(struct egbe_gameboy *self)
+static void link_cleanup(struct egbe_gameboy *self)
 {
-	struct egbe_curl_context *cc = self->context;
+	struct egbe_curl_context *cc = self->link_context;
 
 	if (cc->handle) {
 		curl_easy_cleanup(cc->handle);
@@ -242,6 +213,123 @@ static void cleanup_curl(struct egbe_gameboy *self)
 
 	if (egbe_curl_initialized && !--egbe_curl_initialized)
 		curl_global_cleanup();
+}
+
+static void update_link_status(struct egbe_gameboy *self)
+{
+	struct egbe_curl_context *cc = self->link_context;
+	struct link_peer *host = &cc->link_state.host;
+	struct link_peer *guest = &cc->link_state.guest;
+
+	if (self->link_status & EGBE_LINK_HOST) {
+		if (host->cycles <= guest->cycles) {
+			self->link_status &= ~EGBE_LINK_WAITING;
+		} else {
+			self->link_status |= EGBE_LINK_WAITING;
+		}
+	} else {
+		if (host->cycles > guest->cycles) {
+			self->link_status &= ~EGBE_LINK_WAITING;
+		} else {
+			self->link_status |= EGBE_LINK_WAITING;
+		}
+	}
+}
+
+static void link_update_self(struct egbe_gameboy *self)
+{
+	struct egbe_curl_context *cc = self->link_context;
+
+	struct json_object *body = json_object_new_object();
+	struct json_object *peer = json_object_new_object();
+
+	char *key = (self->link_status & EGBE_LINK_HOST) ? "host" : "guest";
+	json_object_object_add(body, key, peer);
+
+	json_object_object_add(peer, "id", json_object_new_int64(cc->registration_code));
+	json_object_object_add(peer, "cycles", json_object_new_int64(self->till - self->start));
+	json_object_object_add(peer, "serial", json_object_new_int64(self->xfer_pending ? self->gb->sb : -1));
+
+	// TODO
+	json_object_object_add(peer, "infrared", json_object_new_int64(0));
+
+	const char *json = json_object_to_json_string_ext(body, JSON_C_TO_STRING_PLAIN);
+	http_request(self, json);
+	json_object_put(body);
+}
+
+static void link_read_self(struct egbe_gameboy *self)
+{
+	http_request(self, NULL);
+}
+
+static void link_tick(struct egbe_gameboy *self)
+{
+	struct egbe_curl_context *cc = self->link_context;
+	struct link_peer *host = &cc->link_state.host;
+	struct link_peer *guest = &cc->link_state.guest;
+
+	switch (self->link_status) {
+	case EGBE_LINK_HOST | EGBE_LINK_WAITING:
+		link_read_self(self);
+		update_link_status(self);
+
+		if (self->link_status & EGBE_LINK_WAITING)
+			break;
+
+		if (guest->serial >= 0)
+			gameboy_start_serial(self->gb, guest->serial);
+
+		; // fallthrough
+	case EGBE_LINK_HOST:
+		// TODO: Try using guest cycles instead of GB cycles?
+		self->till = self->gb->cycles + EGBE_EVENT_CYCLES;
+		while (self->gb->cycles < self->till)
+			gameboy_tick(self->gb);
+
+		link_update_self(self);
+		update_link_status(self);
+		self->xfer_pending = false;
+
+		// TODO: Refactor; duplicated above
+		if (self->link_status & EGBE_LINK_WAITING)
+			break;
+		if (guest->serial >= 0)
+			gameboy_start_serial(self->gb, guest->serial);
+
+		break;
+
+	case EGBE_LINK_GUEST | EGBE_LINK_WAITING:
+		link_read_self(self);
+		update_link_status(self);
+
+		if (self->link_status & EGBE_LINK_WAITING)
+			break;
+
+		; // fallthrough
+	case EGBE_LINK_GUEST:
+		self->till = host->cycles + self->start;
+		while (self->gb->cycles < self->till)
+			gameboy_tick(self->gb);
+
+		self->xfer_pending = (host->serial >= 0);
+		if (self->xfer_pending)
+			gameboy_start_serial(self->gb, host->serial);
+
+		link_update_self(self);
+		update_link_status(self);
+		self->xfer_pending = false;
+		break;
+
+	default:
+		GBLOG("Unknown link status: %d", self->link_status);
+		self->link_status = EGBE_LINK_DISCONNECTED;
+		; // fallthrough
+	case EGBE_LINK_DISCONNECTED:
+		self->till = self->gb->cycles + EGBE_EVENT_CYCLES;
+		while (self->gb->cycles < self->till)
+			gameboy_tick(self->gb);
+	}
 }
 
 int egbe_gameboy_init_curl(struct egbe_gameboy *self, char *api_url)
@@ -278,11 +366,22 @@ int egbe_gameboy_init_curl(struct egbe_gameboy *self, char *api_url)
 		return 1;
 	}
 
-	self->context = cc;
+	int rc = getrandom(&cc->registration_code, sizeof(cc->registration_code), GRND_NONBLOCK);
+	if (rc == sizeof(cc->registration_code)) {
+		// Positive IDs for simplicity
+		if (cc->registration_code < 0)
+			cc->registration_code *= -1;
+	} else {
+		GBLOG("Error creating random ID");
+	}
 
-	self->cleanup = cleanup_curl;
-	self->connect = connect_curl;
-	self->tick = tick_curl;
+	self->link_context = cc;
+	self->link_cleanup = link_cleanup;
+	self->link_connect = link_connect;
+	self->tick = link_tick;
+
+	self->gb->on_serial_start.callback = interrupt_serial_curl;
+	self->gb->on_serial_start.context = self;
 
 	return 0;
 }
