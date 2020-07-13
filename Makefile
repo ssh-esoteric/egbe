@@ -32,6 +32,14 @@ else
 	EGBE_SRCS += egbe_curl_stub.c
 endif
 
+ifdef LWS
+	EGBE_SRCS += egbe_lws.c
+	CFLAGS += $(shell pkg-config --cflags libwebsockets json-c)
+	LIBS += $(shell pkg-config --libs libwebsockets json-c)
+else
+	EGBE_SRCS += egbe_lws_stub.c
+endif
+
 ifdef DEBUG
 	EGBE_SRCS += egbe_debugger.c
 	CFLAGS += $(shell pkg-config --cflags ruby)

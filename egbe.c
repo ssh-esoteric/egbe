@@ -361,6 +361,9 @@ int egbe_main(int argc, char **argv)
 	} else if (strcasecmp(serial, "curl") == 0) {
 		if (egbe_gameboy_init_curl(&host, getenv("SERIAL_URL")))
 			GBLOG("Failed to register curl serial handler");
+	} else if (strcasecmp(serial, "lws") == 0) {
+		if (egbe_gameboy_init_lws(&host, getenv("SERIAL_URL")))
+			GBLOG("Failed to register lws serial handler");
 	} else {
 		GBLOG("Unknown SERIAL value: %s", serial);
 	}
