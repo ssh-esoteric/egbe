@@ -53,6 +53,7 @@ EGBE supports a number of environment variables to configure runtime behavior.
 | Variable              | Description   |
 | --------------------- |:------------- |
 | `GBC=1`               | Launch EGBE in GBC mode
+| `MUTED=1`             | Launch EGBE with audio muted (audio controls above still work)
 | `BOOT=$file`          | Set path to Boot ROM file
 | `CART=$file`          | Set path to ROM file
 |                       | (Aliased as `BOOT1` and `CART1` below)

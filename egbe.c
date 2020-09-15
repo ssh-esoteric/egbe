@@ -459,10 +459,12 @@ int egbe_main(int argc, char **argv)
 		SDL_PauseAudioDevice(audio.device_id, 0);
 	}
 
-	// host.gb->sq1.super.muted = true;
-	// host.gb->sq2.super.muted = true;
-	// host.gb->wave.super.muted = true;
-	// host.gb->noise.super.muted = true;
+	if (getenv("MUTED")) {
+		host.gb->sq1.super.muted = true;
+		host.gb->sq2.super.muted = true;
+		host.gb->wave.super.muted = true;
+		host.gb->noise.super.muted = true;
+	}
 
 	if (guest.gb) {
 		guest.gb->sq1.super.muted = true;
