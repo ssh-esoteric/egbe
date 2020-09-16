@@ -2,8 +2,14 @@
 #define _GNU_SOURCE
 #include "egbe.h"
 #include "common.h"
+#include <dlfcn.h>
+#include <glob.h>
+#include <libgen.h>
+#include <limits.h>
 #include <SDL2/SDL.h>
 #include <string.h>
+
+char PLUGIN_UNSPECIFIED[] = "<Unspecified>";
 
 struct texture {
 	int *pixels;
@@ -322,11 +328,14 @@ static void link_connect(struct egbe_gameboy *self)
 		GBLOG("Failed to connect link cable: %d", rc);
 }
 
-int egbe_main(int argc, char **argv)
+static void egbe_main(struct egbe_application *app)
 {
+	int argc = app->argc;
+	char **argv = app->argv;
+
 	if (SDL_Init(SDL_INIT_EVERYTHING)) {
 		GBLOG("Failed to initialize SDL: %s", SDL_GetError());
-		return 1;
+		return;
 	}
 	atexit(SDL_Quit);
 
@@ -342,15 +351,18 @@ int egbe_main(int argc, char **argv)
 	struct egbe_gameboy *focus = &host;
 
 	if (!host.gb)
-		return 1;
+		return;
 
 	char *serial = getenv("SERIAL");
-	if (!serial) {
-		; // fallthrough
-	} else if (strcasecmp(serial, "local") == 0) {
+
+	if (app->start_link_client) {
+		app->start_link_client(&host, getenv("SERIAL_URL"));
+	} else if (serial && strcmp(serial, "local") == 0) {
+		// TODO: Move this section to its own "start_link_client" hook?
+
 		guest.gb = gameboy_alloc(system);
 		if (!guest.gb)
-			return 1;
+			return;
 
 		// TODO: host.status and guest.status should be used somewhere
 		host.tick = local_serial_tick;
@@ -358,14 +370,6 @@ int egbe_main(int argc, char **argv)
 
 		host.gb->on_serial_start.callback = local_serial_interrupt;
 		host.gb->on_serial_start.context = &host;
-	} else if (strcasecmp(serial, "curl") == 0) {
-		if (egbe_gameboy_init_curl(&host, getenv("SERIAL_URL")))
-			GBLOG("Failed to register curl serial handler");
-	} else if (strcasecmp(serial, "lws") == 0) {
-		if (egbe_gameboy_init_lws(&host, getenv("SERIAL_URL")))
-			GBLOG("Failed to register lws serial handler");
-	} else {
-		GBLOG("Unknown SERIAL value: %s", serial);
 	}
 
 	char *host_cart = getenv("CART1") ?: getenv("CART");
@@ -537,7 +541,10 @@ int egbe_main(int argc, char **argv)
 					break;
 
 				case SDLK_g:
-					egbe_gameboy_debug(focus);
+					if (app->start_debugger)
+						app->start_debugger(focus);
+					else
+						GBLOG("No debugger configured");
 					break;
 				}
 				break;
@@ -571,6 +578,232 @@ int egbe_main(int argc, char **argv)
 
 	view_free(&view);
 	audio_free(&audio);
+}
+
+static struct egbe_plugin *find_plugin(struct egbe_application *app, char *name)
+{
+	if (!name)
+		return NULL;
+
+	for (int i = 0; i < EGBE_MAX_PLUGINS; ++i) {
+		struct egbe_plugin *tmp = app->plugins[i];
+
+		if (tmp && strcmp(tmp->name, name) == 0)
+			return tmp;
+	}
+
+	return NULL;
+}
+
+static struct egbe_plugin *load_plugin(char *path)
+{
+	char buf[PATH_MAX];
+
+	char *abs = realpath(path, buf);
+
+	int flags = RTLD_LAZY | RTLD_LOCAL;
+
+	void *dll = dlopen(buf, flags);
+	if (!dll) {
+		GBLOG("Error loading plugin from %s: %s", path, dlerror());
+		return NULL;
+	}
+
+	struct egbe_plugin *plugin = calloc(1, sizeof(*plugin));
+	if (!plugin) {
+		GBLOG("Failed to calloc plugin: %m");
+		return NULL;
+	}
+
+	long *api = dlsym(dll, "egbe_plugin_export_api");
+	if (!api) {
+		GBLOG("Could not find egbe_plugin_export symbol in %s", path);
+		return NULL;
+	}
+	plugin->api = *api;
+	plugin->dll_handle = dll;
+
+	char **str;
+	str = dlsym(dll, "egbe_plugin_export_name");
+	plugin->name = str ? *str : PLUGIN_UNSPECIFIED;
+
+	str = dlsym(dll, "egbe_plugin_export_description");
+	plugin->description = str ? *str : PLUGIN_UNSPECIFIED;
+
+	str = dlsym(dll, "egbe_plugin_export_website");
+	plugin->website = str ? *str : PLUGIN_UNSPECIFIED;
+
+	str = dlsym(dll, "egbe_plugin_export_author");
+	plugin->author = str ? *str : PLUGIN_UNSPECIFIED;
+
+	str = dlsym(dll, "egbe_plugin_export_version");
+	plugin->version = str ? *str : PLUGIN_UNSPECIFIED;
+
+	EGBE_PLUGIN_INIT *init = dlsym(dll, "egbe_plugin_export_init");
+	if (init)
+		plugin->init = *init;
+
+	EGBE_PLUGIN_EXIT *exit = dlsym(dll, "egbe_plugin_export_exit");
+	if (exit)
+		plugin->exit = *exit;
+
+	EGBE_PLUGIN_CALL *call = dlsym(dll, "egbe_plugin_export_call");
+	if (call)
+		plugin->call = *call;
+
+	EGBE_PLUGIN_START_DEBUGGER *dbg = dlsym(dll, "egbe_plugin_export_start_debugger");
+	if (dbg)
+		plugin->start_debugger = *dbg;
+
+	EGBE_PLUGIN_START_LINK_CLIENT *link = dlsym(dll, "egbe_plugin_export_start_link_client");
+	if (link)
+		plugin->start_link_client = *link;
+
+	if (getenv("PLUGIN_DEBUG")) {
+		GBLOG("\n"
+		      "\tPath: %s\n"
+		      "\tName: %s\n"
+		      "\tDescription: %s\n"
+		      "\tWebsite: %s\n"
+		      "\tAuthor: %s\n"
+		      "\tVersion: %s\n"
+		      "\tPlugin API:\n"
+		      "%s"
+		      "%s"
+		      "%s"
+		      "%s"
+		      "%s",
+		      buf,
+		      plugin->name, plugin->description, plugin->website,
+		      plugin->author, plugin->version,
+		      (plugin->init ? "\t- init()\n" : ""),
+		      (plugin->exit ? "\t- exit()\n" : ""),
+		      (plugin->call ? "\t- call()\n" : ""),
+		      (plugin->start_debugger ? "\t- start_debugger()\n" : ""),
+		      (plugin->start_link_client ? "\t- start_link_client()\n" : "")
+		);
+	}
+
+	return plugin;
+}
+
+struct plugin_call_context {
+	struct egbe_application *app;
+
+	size_t iter;
+};
+
+static void call_into_egbe_main(void *tmp)
+{
+	struct plugin_call_context *context = tmp;
+	struct egbe_application *app = context->app;
+
+	while (context->iter < app->plugins_registered) {
+		struct egbe_plugin *plugin = app->plugins[context->iter++];
+
+		if (plugin->active && plugin->call) {
+			plugin->call(app, plugin, call_into_egbe_main, context);
+			return;
+		}
+	}
+
+	egbe_main(app);
+}
+
+int main(int argc, char **argv)
+{
+	struct egbe_application app = {
+		.argc = argc,
+		.argv = argv,
+	};
+
+	glob_t search = { 0 };
+
+	char *dir = dirname(realpath(argv[0], NULL));
+	char plugin_glob[PATH_MAX] = { 0 };
+	strcat(plugin_glob, dir);
+	strcat(plugin_glob, "/plugins/*/*.so");
+	free(dir);
+
+	int flags = 0;//GLOB_NOSORT;
+	int rc = glob(plugin_glob, flags, NULL, &search);
+	if (!rc) {
+		for (size_t i = 0; i < search.gl_pathc; ++i) {
+			char *path = search.gl_pathv[i];
+
+			struct egbe_plugin *p = load_plugin(path);
+			if (!p)
+				continue;
+
+			app.plugins[app.plugins_registered++] = p;
+
+			if (app.plugins_registered == EGBE_MAX_PLUGINS) {
+				GBLOG("Hit max plugin limit of %d", EGBE_MAX_PLUGINS);
+				break;
+			}
+		}
+	}
+	globfree(&search);
+
+	struct egbe_plugin *plugin = NULL;
+
+	plugin = find_plugin(&app, getenv("DEBUG"));
+	if (plugin) {
+		if (plugin->start_debugger) {
+			app.start_debugger = plugin->start_debugger;
+			plugin->active = true;
+
+			GBLOG("Loaded \"%s\" as debugger", plugin->name);
+		} else {
+			GBLOG("\"%s\" is not a debugger plugin", plugin->name);
+		}
+	}
+
+	plugin = find_plugin(&app, getenv("SERIAL"));
+	if (plugin) {
+		if (plugin->start_link_client) {
+			app.start_link_client = plugin->start_link_client;
+			plugin->active = true;
+
+			GBLOG("Loaded \"%s\" as link client", plugin->name);
+		} else {
+			GBLOG("\"%s\" is not a link client plugin", plugin->name);
+		}
+	}
+
+	for (size_t i = 0; i < app.plugins_registered; ++i) {
+		struct egbe_plugin *tmp = app.plugins[i];
+
+		if (tmp && tmp->active && tmp->init)
+			tmp->init(&app, tmp);
+	}
+
+	struct plugin_call_context context = {
+		.app = &app,
+		.iter = 0,
+	};
+	call_into_egbe_main(&context);
+
+	app.start_debugger = NULL;
+	app.start_link_client = NULL;
+
+	do {
+		struct egbe_plugin *tmp = app.plugins[app.plugins_registered - 1];
+		if (!tmp)
+			continue;
+
+		if (tmp->active && tmp->exit)
+			tmp->exit(&app, tmp);
+
+		if (tmp->dll_handle) {
+			if (dlclose(tmp->dll_handle))
+				GBLOG("Error unloading %s plugin: %s", tmp->name, dlerror());
+
+			free(tmp);
+		}
+
+		app.plugins[app.plugins_registered - 1] = NULL;
+	} while (--app.plugins_registered);
 
 	return 0;
 }

@@ -43,8 +43,8 @@ EGBE is an emulator for running GameBoy games on Linux.  Written in C with [SDL 
 | H               | Advance RTC by one hour
 | J               | Advance RTC by one day
 | Left Ctrl       | Swap focused Game Boy (with `SERIAL=local`)
-| L               | Open remote link cable (with `SERIAL=curl` or `SERIAL=lws`; see requirements below)
-| G               | Enter Ruby debugger shell (see requirements below)
+| L               | Open remote link cable (with `SERIAL=$plugin`; see requirements below)
+| G               | Enter debugger shell (with `DEBUG=$plugin`; see requirements below)
 
 ## Runtime Flags
 
@@ -54,9 +54,12 @@ EGBE supports a number of environment variables to configure runtime behavior.
 | --------------------- |:------------- |
 | `GBC=1`               | Launch EGBE in GBC mode
 | `MUTED=1`             | Launch EGBE with audio muted (audio controls above still work)
+| `PLUGIN_DEBUG=1`      | Print detailed information about discovered plugins
 | `BOOT=$file`          | Set path to Boot ROM file
 | `CART=$file`          | Set path to ROM file
 |                       | (Aliased as `BOOT1` and `CART1` below)
+| **Debugger**          |
+| `DEBUG=$plugin`       | Use `ruby`/other plugin to enable a debug shell
 | **Local Link Cable**  |
 | `SERIAL=local`        | Launch EGBE with two connected Game Boys (host on left, guest on right)
 | `BOOT1=$file`         | Host: Set path to Boot ROM file
@@ -64,36 +67,37 @@ EGBE supports a number of environment variables to configure runtime behavior.
 | `BOOT2=$file`         | Guest: Set path to Boot ROM file (defaults to `BOOT1`)
 | `CART2=$file`         | Guest: Set path to ROM file (defaults to `CART1`)
 | **Remote Link Cable** |
-| `SERIAL=curl`         | Enables remote link cables with cURL (see build requirements below)
-| `SERIAL=lws`          | Enables remote link cables with libwebsockets (see build requirements below)
+| `SERIAL=$plugin`      | Use `curl`/`lws`/other plugin to enable remote link cables
 | `SERIAL_URL=$url`     | API endpoint to use for remote link cables
 
-## Build Flags
+## Build Process + Plugins
 
 At the moment, EGBE uses a simple Makefile for its build process.
-Usually, any extra features that would require a new development library
-(beyond SDL) can be enabled during the build process.
+Additional functionality (particularly that requiring other libraries) may be included through a plugin system defined in `egbe_plugin_api.h`.
+On launch, EGBE will attempt to load any plugins matching `./plugins/*/*.so`.
 
-EX: `DEBUG=1 CURL=1 LWS=1 make -Bj9`
+EX: `make -Bj9 ruby curl egbe && DEBUG=ruby SERIAL=curl ./egbe`
+
+The following plugins are included by default:
 
 ### Curl Link Cable Client
 
-`CURL=1 make`
+`make curl egbe && SERIAL=curl SERIAL_URL=$url ./egbe`
 
-Requires the cURL development libraries and [JSON-C](https://github.com/json-c/json-c) libraries.
+Requires the [JSON-C](https://github.com/json-c/json-c) and cURL development libraries.
 
 ### LWS Link Cable Client
 
-`LWS=1 make`
+`make lws egbe && SERIAL=lws SERIAL_URL=$url ./egbe`
 
-Requires the libwebsockets development libraries and [JSON-C](https://github.com/json-c/json-c) libraries.
+Requires the [JSON-C](https://github.com/json-c/json-c) and libwebsockets development libraries.
 
 ### Ruby Debugger
 
-`DEBUG=1 make`
+`make ruby egbe && DEBUG=ruby ./egbe`
 
-Requires the Ruby development libraries.  When the debugger is first
-launched, a file called `local.rb` will be loaded if it exists.
+Requires the Ruby development libraries.
+When the debugger is first launched, a file called `local.rb` will be loaded if it exists.
 
 # License
 

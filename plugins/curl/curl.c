@@ -1,17 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #define _GNU_SOURCE
-#include "egbe.h"
-#include "common.h"
+#include "egbe_plugin_api.h"
 #include <curl/curl.h>
 #include <json-c/json.h>
+#include <string.h>
 #include <sys/param.h>
 #include <sys/random.h>
-#include <string.h>
 
 #define MAX_URL 1024
 #define MAX_BODY 2048
-
-static size_t egbe_curl_initialized = 0;
 
 struct link_peer {
 	long id;
@@ -210,9 +207,6 @@ static void link_cleanup(struct egbe_gameboy *self)
 		curl_easy_cleanup(cc->handle);
 		cc->handle = NULL;
 	}
-
-	if (egbe_curl_initialized && !--egbe_curl_initialized)
-		curl_global_cleanup();
 }
 
 static void update_link_status(struct egbe_gameboy *self)
@@ -332,19 +326,11 @@ static void link_tick(struct egbe_gameboy *self)
 	}
 }
 
-int egbe_gameboy_init_curl(struct egbe_gameboy *self, char *api_url)
+static int start_link_client(struct egbe_gameboy *self, char *api_url)
 {
 	if (!api_url) {
 		GBLOG("API URL is required to initialize curl handler");
 		return EINVAL;
-	}
-
-	if (!egbe_curl_initialized++) {
-		if (curl_global_init(CURL_GLOBAL_ALL) != CURLE_OK) {
-			egbe_curl_initialized = 0;
-			GBLOG("Failed to initialize curl");
-			return 1;
-		}
 	}
 
 	size_t len = strnlen(api_url, MAX_URL);
@@ -385,3 +371,30 @@ int egbe_gameboy_init_curl(struct egbe_gameboy *self, char *api_url)
 
 	return 0;
 }
+
+static int plugin_init(struct egbe_application *app, struct egbe_plugin *plugin)
+{
+	if (curl_global_init(CURL_GLOBAL_ALL) != CURLE_OK) {
+		GBLOG("Failed to initialize curl");
+		return 1;
+	}
+
+	return 0;
+}
+
+static void plugin_exit(struct egbe_application *app, struct egbe_plugin *plugin)
+{
+	curl_global_cleanup();
+}
+
+PLUGIN_NAME("curl");
+PLUGIN_DESCRIPTION("Uses cURL to communicate with the EGBE Link Hub HTTP spec");
+PLUGIN_WEBSITE("https://github.com/ssh-esoteric/egbe");
+
+PLUGIN_AUTHOR("EGBE");
+PLUGIN_VERSION("0.0.1");
+
+PLUGIN_INIT(plugin_init);
+PLUGIN_EXIT(plugin_exit);
+
+PLUGIN_START_LINK_CLIENT(start_link_client);

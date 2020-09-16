@@ -9,6 +9,12 @@ CFLAGS = \
 	-Og -g \
 	-std=c11
 
+PLUGIN_CFLAGS = \
+	$(CFLAGS) \
+	-I$(CURDIR) \
+	-fPIC \
+	-shared
+
 SRCS = \
 	apu.c \
 	cpu.c \
@@ -22,45 +28,24 @@ OBJS = $(SRCS:.c=.o)
 EGBE_SRCS = $(SRCS) egbe.c
 EGBE_OBJS = $(EGBE_SRCS:.c=.o)
 
-LIBS = -lSDL2
+LIBS = -ldl -lSDL2
+LINK = $(LIBS) -rdynamic
 
-ifdef CURL
-	EGBE_SRCS += egbe_curl.c
-	CFLAGS += $(shell pkg-config --cflags libcurl json-c)
-	LIBS += $(shell pkg-config --libs libcurl json-c)
-else
-	EGBE_SRCS += egbe_curl_stub.c
-endif
+export CC CFLAGS PLUGIN_CFLAGS
 
-ifdef LWS
-	EGBE_SRCS += egbe_lws.c
-	CFLAGS += $(shell pkg-config --cflags libwebsockets json-c)
-	LIBS += $(shell pkg-config --libs libwebsockets json-c)
-else
-	EGBE_SRCS += egbe_lws_stub.c
-endif
-
-ifdef DEBUG
-	EGBE_SRCS += egbe_debugger.c
-	CFLAGS += $(shell pkg-config --cflags ruby)
-	LIBS += $(shell pkg-config --libs ruby)
-else
-	EGBE_SRCS += egbe_debugger_stub.c
-endif
-
-.PHONY: all clean
+.PHONY: all clean curl lws plugins ruby
 
 all: egbe
+plugins: curl lws ruby
 
 clean:
 	rm -f egbe *.o **/*.o
 
 egbe: $(EGBE_OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LINK)
 
-# Ruby has non-strict prototypes in its headers
-egbe_debugger.o: egbe_debugger.c
-	$(CC) $(CFLAGS) -Wno-strict-prototypes -o $@ -c $<
+curl lws ruby:
+	$(MAKE) -C plugins/$@/
 
 %.o: %.c
 	$(CC) $(CFLAGS) -o $@ -c $<

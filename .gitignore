@@ -2,7 +2,9 @@
 *~
 
 egbe
+*.dll
 *.o
+*.so
 
 *.bin
 *.gb

@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #define _GNU_SOURCE
-#include "egbe.h"
-#include "common.h"
-#include <libwebsockets.h>
-#include <string.h>
-#include <signal.h>
-#include <pthread.h>
+#include "egbe_plugin_api.h"
 #include <json-c/json.h>
+#include <libwebsockets.h>
+#include <pthread.h>
+#include <signal.h>
+#include <string.h>
 #include <sys/random.h>
 
 #define MAX_URL 1024
@@ -381,7 +380,7 @@ static void cleanup_lws(struct egbe_gameboy *self)
 	lws_context_destroy(wsc->context);
 }
 
-int egbe_gameboy_init_lws(struct egbe_gameboy *self, char *api_url)
+static int start_link_client(struct egbe_gameboy *self, char *api_url)
 {
 	int rc;
 
@@ -442,3 +441,12 @@ int egbe_gameboy_init_lws(struct egbe_gameboy *self, char *api_url)
 
 	return 0;
 }
+
+PLUGIN_NAME("lws");
+PLUGIN_DESCRIPTION("Uses libwebsockets to communicate with the EGBE Link Hub HTTP+WebSocket spec");
+PLUGIN_WEBSITE("https://github.com/ssh-esoteric/egbe");
+
+PLUGIN_AUTHOR("EGBE");
+PLUGIN_VERSION("0.0.1");
+
+PLUGIN_START_LINK_CLIENT(start_link_client);

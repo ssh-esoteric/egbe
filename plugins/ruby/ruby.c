@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-#include "egbe.h"
-#include "common.h"
+#include "egbe_plugin_api.h"
 #include <time.h> // Required before ruby.h to declare struct timespec
 #include <ruby.h>
 #include <ruby/encoding.h>
@@ -114,7 +113,9 @@ static VALUE cAccessor_inspect(VALUE self)
 	return rb_sprintf("%s: %s", rb_class2name(klass), buf);
 }
 
-static void debugger_init(void)
+// TODO: Named to fit extconf.rb convention, I think.  Should this be moved to
+//       a Ruby gem and loaded like other extensions?
+static void Init_egbe(void)
 {
 	mEGBE = rb_define_module("EGBE");
 
@@ -319,12 +320,7 @@ static void debugger_init(void)
 	);
 }
 
-static void debugger_free(void)
-{
-	ruby_cleanup(0);
-}
-
-void egbe_gameboy_debug(struct egbe_gameboy *egb)
+static void start_debugger(struct egbe_gameboy *egb)
 {
 	if (rb_gv_get("$gb") == Qnil) {
 		VALUE self = Data_Wrap_Struct(cGB, NULL, NULL, egb->gb);
@@ -343,7 +339,8 @@ void egbe_gameboy_debug(struct egbe_gameboy *egb)
 	);
 }
 
-int main(int argc, char **argv)
+static void plugin_call(struct egbe_application *app, struct egbe_plugin *plugin,
+                        void (*call_next_plugin)(void *context), void *context)
 {
 	// Ensure that all Ruby code happens on this stack frame
 	// See https://silverhammermba.github.io/emberb/embed/#startup-teardown
@@ -352,9 +349,19 @@ int main(int argc, char **argv)
 	ruby_init_loadpath();
 	ruby_script("EGBE");
 
-	debugger_init();
-	int rc = egbe_main(argc, argv);
-	debugger_free();
+	Init_egbe();
+	call_next_plugin(context);
 
-	return rc;
+	ruby_cleanup(0);
 }
+
+PLUGIN_NAME("ruby");
+PLUGIN_DESCRIPTION("Exposes EGBE objects to a Ruby debugger");
+PLUGIN_WEBSITE("https://github.com/ssh-esoteric/egbe");
+
+PLUGIN_AUTHOR("EGBE");
+PLUGIN_VERSION("0.0.1");
+
+PLUGIN_CALL(plugin_call);
+
+PLUGIN_START_DEBUGGER(start_debugger);
